@@ -1,16 +1,15 @@
-// ------------------ 預設控制器策略 ------------------
-const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器 (高密度雷達與盲區抑制)
+// ========================================================
+// 無人機台北都市避障模擬賽 (真實街區 2.5D 程序化生成版)
+// ========================================================
+
+const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器
 class StudentController {
     constructor(goal_pos) {
         this.goal = goal_pos;
-
-        // ★ 核心運動與感知參數 (可自行微調)
-        this.speed = 10.0;              // 最高巡航速度 (m/s，建議 6~14)
-        this.cruise_altitude = 8.0;     // 基準巡航高度 (m)
-        this.sensorRange = 10.0;        // 雷達探測半徑 (m)
-        this.repulsePower = 12.0;       // 避障排斥力強度 (數值越大閃越開)
-
-        // 脫困狀態機參數
+        this.speed = 10.0;
+        this.cruise_altitude = 8.0;
+        this.sensorRange = 10.0;
+        this.repulsePower = 14.0;
         this.history = [];
         this.escapeTimer = 0.0;
         this.escapeDir = [0, 0, 0];
@@ -20,7 +19,6 @@ class StudentController {
         const [cx, cy, cz] = current_pos;
         const [gx, gy, gz] = this.goal;
 
-        // 1. 卡死判定 (過去 1.2 秒位移小於 0.3m)
         this.history.push([cx, cz]);
         if (this.history.length > 35) this.history.shift();
 
@@ -31,21 +29,17 @@ class StudentController {
             if (disp < 0.3) isStuck = true;
         }
 
-        // 2. 觸發脫困：後退 + 側向切開
         if (isStuck) {
             this.escapeTimer = 1.6;
             const dx = gx - cx, dz = gz - cz;
             const len = Math.hypot(dx, dz) || 1.0;
             const bx = -dx / len, bz = -dz / len;
-            
             const distLeft = raycast_func(current_pos, [-bz, 0, bx], 12.0);
             const distRight = raycast_func(current_pos, [bz, 0, -bx], 12.0);
             const side = distLeft > distRight ? [-bz, bx] : [bz, -bx];
-
             this.escapeDir = [bx * 0.5 + side[0] * 0.8, 0, bz * 0.5 + side[1] * 0.8];
         }
 
-        // 3. 執行脫困
         if (this.escapeTimer > 0) {
             this.escapeTimer -= dt;
             this.history = [];
@@ -57,7 +51,6 @@ class StudentController {
             ];
         }
 
-        // 4. 16 向高解析度雷達 (消弭盲區)
         const dx = gx - cx, dz = gz - cz;
         const distGoal = Math.hypot(dx, dz) || 1.0;
         let fx = (dx / distGoal) * 2.0;
@@ -79,7 +72,6 @@ class StudentController {
         const vx = (fx / hLen) * this.speed;
         const vz = (fz / hLen) * this.speed;
 
-        // 垂直定高與終點進場降落
         const dist3D = Math.hypot(gx - cx, gy - cy, gz - cz);
         const targetY = dist3D < 14.0 ? gy : this.cruise_altitude;
         const vy = (targetY - cy) * 2.2;
@@ -88,7 +80,6 @@ class StudentController {
     }
 }`;
 
-// 嚴格防呆載入：若為空字串或不存在，一律使用 DEFAULT_CONTROLLER_CODE
 const codeTextarea = document.getElementById('controller-code');
 let savedCode = "";
 try {
@@ -130,27 +121,19 @@ viewer.appendChild(renderer.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.target.set(50, 0, 50);
-controls.mouseButtons = {
-    LEFT: THREE.MOUSE.PAN,
-    RIGHT: THREE.MOUSE.ROTATE
-};
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI / 2 - 0.05;
 
 // 光照系統
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
 scene.add(ambientLight);
-
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.65);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
 dirLight.position.set(60, 100, 40);
 scene.add(dirLight);
 
-// 地面格線與外圍電子圍欄籠
-const gridHelper = new THREE.GridHelper(100, 50, 0x444455, 0x222233);
-gridHelper.position.set(50, 0, 50);
-scene.add(gridHelper);
-
+// 電子圍欄 (100x100x25m)
 const fenceGeo = new THREE.BoxGeometry(106, 26, 106);
 const fenceWire = new THREE.WireframeGeometry(fenceGeo);
 const fenceLine = new THREE.LineSegments(
@@ -160,10 +143,24 @@ const fenceLine = new THREE.LineSegments(
 fenceLine.position.set(50, 13, 50);
 scene.add(fenceLine);
 
+// 地面材質：嘗試載入截圖空照底圖，若無則回退至科技格線
+const textureLoader = new THREE.TextureLoader();
+textureLoader.load('map_texture.jpg', (tex) => {
+    const groundGeo = new THREE.PlaneGeometry(100, 100);
+    const groundMat = new THREE.MeshBasicMaterial({ map: tex });
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.set(50, 0.01, 50);
+    scene.add(groundMesh);
+}, undefined, () => {
+    const gridHelper = new THREE.GridHelper(100, 50, 0x444455, 0x222233);
+    gridHelper.position.set(50, 0, 50);
+    scene.add(gridHelper);
+});
+
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// 無人機 (實體球體，半徑 0.25m，亮青色 0x00ffff)
 const DRONE_RADIUS = 0.25;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
@@ -171,7 +168,6 @@ const droneMesh = new THREE.Mesh(
 );
 scene.add(droneMesh);
 
-// 航跡線段
 let trailPositions = [];
 let trailLine = null;
 
@@ -179,11 +175,7 @@ function clearTrail() {
     if (trailLine) scene.remove(trailLine);
     trailPositions = [];
     const geom = new THREE.BufferGeometry();
-    const mat = new THREE.LineBasicMaterial({ 
-        color: 0xffaa00, 
-        linewidth: 2,
-        depthTest: true
-    });
+    const mat = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 });
     trailLine = new THREE.Line(geom, mat);
     trailLine.frustumCulled = false;
     scene.add(trailLine);
@@ -196,7 +188,6 @@ function appendTrail(x, y, z) {
     trailLine.geometry.computeBoundingSphere();
 }
 
-// 終點殘餘直線雷射導引線
 let laserLine = null;
 function showDirectLaser(fromPt, toPt) {
     if (laserLine) scene.remove(laserLine);
@@ -204,12 +195,7 @@ function showDirectLaser(fromPt, toPt) {
         new THREE.Vector3(...fromPt),
         new THREE.Vector3(...toPt)
     ]);
-    const mat = new THREE.LineDashedMaterial({
-        color: 0xff1493,
-        dashSize: 1.2,
-        gapSize: 0.6,
-        linewidth: 2
-    });
+    const mat = new THREE.LineDashedMaterial({ color: 0xff1493, dashSize: 1.2, gapSize: 0.6, linewidth: 2 });
     laserLine = new THREE.Line(geom, mat);
     laserLine.frustumCulled = false;
     laserLine.computeLineDistances();
@@ -223,7 +209,6 @@ function clearLaser() {
     }
 }
 
-// 撞擊點速度向量視覺化箭頭
 let crashArrow = null;
 function showCrashVector(pos, vel) {
     if (crashArrow) scene.remove(crashArrow);
@@ -250,7 +235,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(viewer.clientWidth, viewer.clientHeight);
 });
 
-// ------------------ 視角切換控制系統 ------------------
+// ------------------ 視角切換系統 ------------------
 let cameraMode = 'orbit';
 const camOrbitBtn = document.getElementById('cam-orbit-btn');
 const camFollowBtn = document.getElementById('cam-follow-btn');
@@ -269,7 +254,6 @@ function setCameraMode(mode) {
         if (camFollowBtn) camFollowBtn.classList.add('active');
         if (camOrbitBtn) camOrbitBtn.classList.remove('active');
         controls.enabled = false;
-        
         const dp = droneMesh.position;
         let vx = activeVelocity[0], vz = activeVelocity[2];
         let vLen = Math.hypot(vx, vz) || 1.0;
@@ -283,83 +267,51 @@ if (camFollowBtn) camFollowBtn.addEventListener('click', () => setCameraMode('fo
 
 function animate() {
     requestAnimationFrame(animate);
-
     if (cameraMode === 'orbit') {
         controls.update();
     } else if (cameraMode === 'follow') {
         const dp = droneMesh.position;
-        
-        let vx = activeVelocity[0];
-        let vz = activeVelocity[2];
-        let vLen = Math.hypot(vx, vz);
-        
-        if (vLen < 0.1) {
-            vx = 1.0;
-            vz = 1.0;
-            vLen = Math.SQRT2;
-        }
-
-        const nx = vx / vLen;
-        const nz = vz / vLen;
-
-        const targetCamX = dp.x - nx * 5.0;
-        const targetCamY = dp.y + 2.5;
-        const targetCamZ = dp.z - nz * 5.0;
-
-        camera.position.x += (targetCamX - camera.position.x) * 0.15;
-        camera.position.y += (targetCamY - camera.position.y) * 0.15;
-        camera.position.z += (targetCamZ - camera.position.z) * 0.15;
-
+        let vx = activeVelocity[0], vz = activeVelocity[2];
+        let vLen = Math.hypot(vx, vz) || 1.0;
+        const nx = vx / vLen, nz = vz / vLen;
+        camera.position.x += (dp.x - nx * 5.0 - camera.position.x) * 0.15;
+        camera.position.y += (dp.y + 2.5 - camera.position.y) * 0.15;
+        camera.position.z += (dp.z - nz * 5.0 - camera.position.z) * 0.15;
         camera.lookAt(dp.x + nx * 2.5, dp.y + 0.5, dp.z + nz * 2.5);
     }
-
     renderer.render(scene, camera);
 }
 animate();
 
-// ------------------ 隨機地圖與灰色實體建築群 ------------------
-function Mulberry32(seed) {
-    return function() {
-        var t = seed += 0x6D2B79F5;
-        t = Math.imul(t ^ t >>> 15, t | 1);
-        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-}
-
+// ------------------ 依據平面真實路網長出 3D 建築 ------------------
 const START_POS = [0, 6.25, 0];
 const GOAL_POS = [100, 14.25, 100];
-const BASE_TOTAL_DIST = Math.hypot(
-    GOAL_POS[0] - START_POS[0],
-    GOAL_POS[1] - START_POS[1],
-    GOAL_POS[2] - START_POS[2]
-);
+const BASE_TOTAL_DIST = Math.hypot(GOAL_POS[0] - START_POS[0], GOAL_POS[1] - START_POS[1], GOAL_POS[2] - START_POS[2]);
 const GEOFENCE = { xmin: -3.0, xmax: 103.0, zmin: -3.0, zmax: 103.0, ymax: 25.0 };
 let buildings = [];
 
-function buildCity(seed) {
+// 依據截圖路網幾何精準建構的真實街區分佈
+function generateCityFromPlanarMap() {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
     }
     buildings = [];
 
-    const rng = Mulberry32(seed);
-
     function addSolidBuilding(bx, bz, bw, bd, bh, colorHex, isSpecial = false) {
         const geo = new THREE.BoxGeometry(bw, bh, bd);
-        
         const solidMat = new THREE.MeshLambertMaterial({ 
-            color: isSpecial ? colorHex : 0x2e323b 
+            color: isSpecial ? colorHex : 0x2b303c 
         });
         const solidMesh = new THREE.Mesh(geo, solidMat);
         solidMesh.position.set(bx, bh / 2, bz);
         cityGroup.add(solidMesh);
 
+        // 建築外牆冷光邊線
         const edgesGeo = new THREE.EdgesGeometry(geo);
         const edgesMat = new THREE.LineBasicMaterial({ 
-            color: isSpecial ? colorHex : 0x5a6375, 
+            color: isSpecial ? colorHex : 0x00d2ff, 
             transparent: true, 
-            opacity: 0.65 
+            opacity: 0.5 
         });
         const wireLine = new THREE.LineSegments(edgesGeo, edgesMat);
         solidMesh.add(wireLine);
@@ -372,8 +324,8 @@ function buildCity(seed) {
         });
     }
 
-    // 起點大樓 (高度 6.0) 與 綠色圓盤
-    addSolidBuilding(0, 0, 2.0, 2.0, 6.0, 0x00ff88, true);
+    // 起點停機坪 (綠色)
+    addSolidBuilding(0, 0, 2.5, 2.5, 6.0, 0x00ff88, true);
     const startPad = new THREE.Mesh(
         new THREE.CylinderGeometry(0.8, 0.8, 0.05, 16),
         new THREE.MeshBasicMaterial({ color: 0x00ff88 })
@@ -381,8 +333,8 @@ function buildCity(seed) {
     startPad.position.set(0, 6.02, 0);
     cityGroup.add(startPad);
 
-    // 終點大樓 (高度 14.0) 與 金色圓盤
-    addSolidBuilding(100, 100, 2.0, 2.0, 14.0, 0xffd700, true);
+    // 終點金色停機坪
+    addSolidBuilding(100, 100, 2.5, 2.5, 14.0, 0xffd700, true);
     const goalPad = new THREE.Mesh(
         new THREE.CylinderGeometry(0.8, 0.8, 0.05, 16),
         new THREE.MeshBasicMaterial({ color: 0xffd700 })
@@ -390,38 +342,31 @@ function buildCity(seed) {
     goalPad.position.set(100, 14.02, 100);
     cityGroup.add(goalPad);
 
-    // 隨機大樓群
-    const streetBuffer = 3.5;
-    let placed = 0, attempts = 0;
-    while (placed < 90 && attempts < 2500) {
-        attempts++;
-        const bw = 4.0 + rng() * 4.0;
-        const bd = 4.0 + rng() * 4.0;
-        const bh = 8.0 + rng() * 14.0;
-        const bx = 5.0 + rng() * 90.0;
-        const bz = 5.0 + rng() * 90.0;
+    // 1. 左側：科教館 / 天文館 / 兒童新樂園 大型地標聚落 (x: 10~40, z: 20~80)
+    addSolidBuilding(22, 38, 14, 12, 16.5, 0x3d4252); // 科教館本體
+    addSolidBuilding(34, 45, 11, 11, 13.0, 0x363b49); // 天文館主體
+    addSolidBuilding(18, 62, 12, 14, 11.5, 0x303542); // 兒童新樂園室內館
+    addSolidBuilding(28, 72, 10, 10, 14.0, 0x323745); // 周邊場館設施
 
-        const xmin = bx - bw / 2, xmax = bx + bw / 2;
-        const zmin = bz - bd / 2, zmax = bz + bd / 2;
+    // 2. 中央幹道沿線高樓群 (x: 45~65)
+    for (let z = 12; z <= 88; z += 13) {
+        addSolidBuilding(48, z, 7, 9, 15.0 + ((z * 3) % 8), 0x282c37);
+        addSolidBuilding(62, z + 3, 8, 8, 16.0 + ((z * 5) % 7), 0x282c37);
+    }
 
-        if (Math.hypot(bx, bz) < 7.0 || Math.hypot(bx - 100, bz - 100) < 7.0) continue;
-
-        let overlap = false;
-        for (let b of buildings) {
-            if (!(xmax + streetBuffer < b.xmin || xmin - streetBuffer > b.xmax ||
-                  zmax + streetBuffer < b.zmin || zmin - streetBuffer > b.zmax)) {
-                overlap = true;
-                break;
-            }
+    // 3. 右側：士林高密度密集街廓群 (x: 72~96, z: 8~92)
+    for (let x = 74; x <= 94; x += 10) {
+        for (let z = 10; z <= 90; z += 12) {
+            if (Math.hypot(x - 100, z - 100) < 8.0) continue; // 保留終點停機空間
+            const w = 6.0 + (x % 3);
+            const d = 7.0 + (z % 4);
+            const h = 10.0 + ((x * z) % 12); // 高度約 10~22m，留出穿梭空隙
+            addSolidBuilding(x, z, w, d, h, 0x242833);
         }
-        if (overlap) continue;
-
-        addSolidBuilding(bx, bz, bw, bd, bh, 0x2e323b, false);
-        placed++;
     }
 }
 
-// 球體實體碰撞檢測 (Sphere-Box AABB + 邊界)
+// 球體實體碰撞檢測 (AABB + 邊界)
 function checkSphereCollision(pos) {
     const [x, y, z] = pos;
     const r = DRONE_RADIUS;
@@ -444,14 +389,12 @@ function checkSphereCollision(pos) {
 
         const distSq = (x - cx)**2 + (y - cy)**2 + (z - cz)**2;
         if (distSq <= (r * 0.96)**2) {
-            if (b.mesh) {
-                b.mesh.material.color.setHex(0xff0044);
-            }
+            if (b.mesh) b.mesh.material.color.setHex(0xff0044);
             return { 
                 hit: true, 
-                reason: "撞擊建築物外牆",
-                building: b,
-                contactPoint: [cx, cy, cz]
+                reason: "撞擊台北市建物外牆", 
+                building: b, 
+                contactPoint: [cx, cy, cz] 
             };
         }
     }
@@ -473,9 +416,8 @@ function checkContinuousPath(p1, p2, step = 0.03) {
             return { 
                 hit: true, 
                 pos: checkPos, 
-                reason: res.reason,
-                building: res.building,
-                contactPoint: res.contactPoint
+                reason: res.reason, 
+                contactPoint: res.contactPoint 
             };
         }
     }
@@ -500,33 +442,7 @@ function raycastSafe(origin, direction, maxDist = 15.0) {
     return maxDist;
 }
 
-// ------------------ 黑盒子深度診斷 ------------------
-function diagnoseCrashReason(currentPos, vel, hitResult) {
-    if (!hitResult.building) {
-        return hitResult.reason;
-    }
-
-    const [vx, vy, vz] = vel;
-    const speed = Math.hypot(vx, vy, vz);
-    const [cx, cy, cz] = currentPos;
-    const [cpx, cpy, cpz] = hitResult.contactPoint;
-
-    const toWallX = cpx - cx;
-    const toWallZ = cpz - cz;
-    const wallDist = Math.hypot(toWallX, toWallZ);
-
-    const dot = (vx * toWallX + vz * toWallZ) / ((speed * wallDist) || 1);
-
-    if (speed >= 8.5 && dot > 0.7) {
-        return `高速直衝煞停不及 (速度 ${speed.toFixed(1)}m/s，避障推力爆發距離不足)`;
-    }
-    if (dot < 0.4 && speed > 2.0) {
-        return `轉向/側切盲區擦撞 (橫移速度過大，側翼無足夠雷達射線探測)`;
-    }
-    return `雷達盲區切入 (障礙物邊角落入射線間隙，未及時產生斥力)`;
-}
-
-// ------------------ 黑盒子日誌系統 (FDR) ------------------
+// ------------------ 結算與日誌 ------------------
 let flightLogs = [];
 let flightEvents = [];
 let flightSummary = null;
@@ -563,9 +479,9 @@ function resetScene() {
     if (simInterval) clearInterval(simInterval);
     clearLaser();
     clearCrashVector();
-    const seed = parseInt(document.getElementById('map-seed').value) || 5655;
-    buildCity(seed);
     clearTrail();
+    generateCityFromPlanarMap();
+
     droneMesh.position.set(...START_POS);
     activeVelocity = [1.0, 0.0, 1.0];
 
@@ -585,19 +501,10 @@ function resetScene() {
     if (logBtn) logBtn.disabled = true;
 
     updateScoreboard(START_POS, "待命出發");
-
-    if (cameraMode === 'follow') {
-        const dp = droneMesh.position;
-        camera.position.set(dp.x - 4.0, dp.y + 2.5, dp.z - 4.0);
-        camera.lookAt(dp.x, dp.y + 0.5, dp.z);
-    }
 }
 
 // ------------------ 事件綁定 ------------------
-document.getElementById('random-seed-btn').addEventListener('click', () => {
-    document.getElementById('map-seed').value = Math.floor(1000 + Math.random() * 9000);
-    resetScene();
-});
+document.getElementById('random-seed-btn').addEventListener('click', resetScene);
 document.getElementById('apply-seed-btn').addEventListener('click', resetScene);
 
 const modal = document.getElementById('prompt-modal');
@@ -611,54 +518,22 @@ document.getElementById('copy-prompt-btn').addEventListener('click', () => {
     });
 });
 
-// 下載黑盒子日誌
 document.getElementById('download-log-btn').addEventListener('click', () => {
     if (!flightSummary) return;
-
     let content = `=======================================================================\n`;
-    content += `         無人機黑盒子飛行紀錄與失事分析報告 (Flight Data Recorder)         \n`;
+    content += `        無人機黑盒子飛行紀錄 (台北真實路網 2.5D 生成版)        \n`;
     content += `=======================================================================\n`;
-    content += `產出時間             : ${new Date().toLocaleString()}\n`;
-    content += `地圖種子碼 (Seed)    : ${flightSummary.seed}\n`;
     content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
     content += `最終任務狀態         : ${flightSummary.status}\n`;
     content += `最後座標位置 [X,Y,Z] : [${flightSummary.finalPos.join(', ')}]\n`;
     content += `直達終點 3D 剩餘距離 : ${flightSummary.remainDist} 公尺\n`;
     content += `航程探索達成率       : ${flightSummary.progress} %\n\n`;
 
-    content += `-----------------------------------------------------------------------\n`;
-    content += `【一、關鍵事件時序紀錄 (Flight Event Log)】\n`;
-    content += `-----------------------------------------------------------------------\n`;
-    flightEvents.forEach(evt => {
-        content += `${evt}\n`;
-    });
-
-    content += `\n-----------------------------------------------------------------------\n`;
-    content += `【二、遙測數據時序抽樣 (每 0.2 秒)】\n`;
-    content += `時間(s) | 當前座標 [X, Y, Z]       | 速度向量 [Vx, Vy, Vz]    | 速率(m/s)\n`;
-    content += `-----------------------------------------------------------------------\n`;
-    flightLogs.forEach(row => {
-        const t = row.time.padEnd(7);
-        const p = `[${row.pos.join(', ')}]`.padEnd(24);
-        const v = `[${row.vel.join(', ')}]`.padEnd(24);
-        content += `${t} | ${p} | ${v} | ${row.speed}\n`;
-    });
-
-    content += `\n=======================================================================\n`;
-    content += `【三、AI 策略調優諮詢提示詞 (可直接貼給 ChatGPT / Claude)】\n`;
-    content += `=======================================================================\n`;
-    content += `學生提問模板：\n`;
-    content += `「這是我在無人機 3D 避障模擬器中的黑盒子飛行報告。我的無人機在地圖種子 ${flightSummary.seed} 中，\n`;
-    content += `飛行到 ${flightSummary.duration} 秒時於座標 [${flightSummary.finalPos.join(', ')}] 發生：\n`;
-    content += `【${flightSummary.status}】，最後距離終點還差 ${flightSummary.remainDist} 公尺。\n`;
-    content += `請根據這份黑盒子事件時序與速度數據，幫我深入診斷我的演算法邏輯盲點，並提供升級修改建議。」\n`;
-    content += `=======================================================================\n`;
-
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `drone_fdr_seed${flightSummary.seed}_${Date.now()}.txt`;
+    a.download = `drone_fdr_taipei_${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
 });
@@ -672,9 +547,6 @@ document.getElementById('run-btn').addEventListener('click', () => {
     let controllerInstance = null;
     try {
         const code = document.getElementById('controller-code').value;
-        try {
-            localStorage.setItem('drone_student_code', code);
-        } catch (e) {}
         const factory = new Function(`${code}; return new StudentController([${GOAL_POS.join(',')}]);`);
         controllerInstance = factory();
     } catch (err) {
@@ -685,7 +557,7 @@ document.getElementById('run-btn').addEventListener('click', () => {
     flightLogs = [];
     flightEvents = [];
     flightSummary = null;
-    addFlightEvent(0.0, `無人機從起點停機坪 (0.00, 6.25, 0.00) 啟動起飛。`);
+    addFlightEvent(0.0, `無人機從起點 (0.00, 6.25, 0.00) 啟動起飛。`);
 
     let currentPos = [...START_POS];
     droneMesh.position.set(...currentPos);
@@ -700,11 +572,9 @@ document.getElementById('run-btn').addEventListener('click', () => {
 
     let timer = 0.0;
     const dt = 0.033;
-    let sampleCounter = 0;
 
     simInterval = setInterval(() => {
         timer += dt;
-        sampleCounter++;
         timeEl.innerText = timer.toFixed(2);
         altEl.innerText = currentPos[1].toFixed(2);
         updateScoreboard(currentPos, "飛行中");
@@ -720,22 +590,11 @@ document.getElementById('run-btn').addEventListener('click', () => {
             clearInterval(simInterval);
             statusEl.innerText = "執行期錯誤";
             statusEl.style.color = "#ff4444";
-            addFlightEvent(timer, `控制器腳本觸發未捕捉之例外錯誤: ${err.message}`);
-            finalizeFlight(currentPos, timer, `執行期例外錯誤: ${err.message}`);
-            alert("控制器執行錯誤: " + err.message);
+            finalizeFlight(currentPos, timer, `執行期錯誤: ${err.message}`);
             return;
         }
 
         activeVelocity = vel;
-
-        if (sampleCounter % 6 === 0) {
-            flightLogs.push({
-                time: timer.toFixed(2),
-                pos: currentPos.map(v => v.toFixed(2)),
-                vel: vel.map(v => v.toFixed(2)),
-                speed: Math.hypot(vel[0], vel[1], vel[2]).toFixed(2)
-            });
-        }
 
         const nextPos = [
             currentPos[0] + vel[0] * dt,
@@ -750,17 +609,13 @@ document.getElementById('run-btn').addEventListener('click', () => {
             droneMesh.position.set(...crashPos);
             appendTrail(...crashPos);
 
-            const detailedReason = diagnoseCrashReason(currentPos, vel, collision);
-
-            statusEl.innerText = `墜毀：${detailedReason}`;
+            statusEl.innerText = `墜毀：${collision.reason}`;
             statusEl.style.color = "#ff3366";
 
             showCrashVector(crashPos, vel);
             showDirectLaser(crashPos, GOAL_POS);
-            updateScoreboard(crashPos, `墜毀：${detailedReason}`);
-
-            addFlightEvent(timer, `碰撞失事！原因: ${detailedReason}，接觸面座標: [${crashPos.map(v=>v.toFixed(2)).join(', ')}]`);
-            finalizeFlight(crashPos, timer, `墜毀：${detailedReason}`);
+            updateScoreboard(crashPos, `墜毀：${collision.reason}`);
+            finalizeFlight(crashPos, timer, `墜毀：${collision.reason}`);
             return;
         }
 
@@ -774,24 +629,19 @@ document.getElementById('run-btn').addEventListener('click', () => {
             currentPos[2] - GOAL_POS[2]
         );
 
-        if (distToGoal < 1.2) {
+        if (distToGoal < 1.5) {
             clearInterval(simInterval);
             statusEl.innerText = "🎉 成功抵達終點！";
             statusEl.style.color = "#00ff88";
             updateScoreboard(GOAL_POS, "成功抵達 (完賽)");
-            addFlightEvent(timer, `🎉 成功降落終點金色停機坪！全航程耗時 ${timer.toFixed(2)} 秒。`);
             finalizeFlight(GOAL_POS, timer, "成功抵達 (完賽)");
             return;
         }
 
-        // 任務超時判定 (200 秒)
         if (timer > 200.0) {
             clearInterval(simInterval);
-            statusEl.innerText = "任務超時 (200s)";
+            statusEl.innerText = "任務超時";
             statusEl.style.color = "#ffaa00";
-            showDirectLaser(currentPos, GOAL_POS);
-            updateScoreboard(currentPos, "超時終止");
-            addFlightEvent(timer, `達到任務安全上限 (200秒)，強制安全滯空停止。`);
             finalizeFlight(currentPos, timer, "任務超時 (200s)");
             return;
         }
@@ -803,7 +653,6 @@ function finalizeFlight(finalPos, duration, statusText) {
     const progress = Math.max(0, Math.min(100, ((BASE_TOTAL_DIST - remain3D) / BASE_TOTAL_DIST) * 100));
 
     flightSummary = {
-        seed: document.getElementById('map-seed').value,
         duration: duration.toFixed(2),
         finalPos: finalPos.map(v => v.toFixed(2)),
         status: statusText,
@@ -815,5 +664,4 @@ function finalizeFlight(finalPos, duration, statusText) {
     if (logBtn) logBtn.disabled = false;
 }
 
-// 啟動場景
 resetScene();
