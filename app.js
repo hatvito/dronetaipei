@@ -171,12 +171,16 @@ function updateGroundMap(bounds) {
     const rawCenterX = (bounds.xmin + bounds.xmax) / 2;
     const rawCenterZ = (bounds.zmin + bounds.zmax) / 2;
 
-    // ★ 在這裡加入對齊校正參數：
-    const offsetMapX = -5.7;  // 左右平移：負值讓底圖向左平移（將黃色圓圈拉向圓形建築）
-    const offsetMapZ = 0.7;    // 上下平移：正值讓底圖向南（下方）平移
+    // ★ 關鍵縮放校正：
+    // 目前兩側建築比底圖散得更開（底圖太小），將底圖放大 18% (1.18) 讓地圖張開去接兩側的大樓
+    const scale = 1.18; 
+    const bw = rawBw * scale;
+    const bd = rawBd * scale;
 
-    const bw = rawBw * 1.0;    // 若長寬需要微調可乘比例（目前維持 1.0）
-    const bd = rawBd * 1.0;
+    // ★ 偏移補償 (以中間科教館為基準微調)：
+    const offsetMapX = -7.2;   // 左右平移
+    const offsetMapZ = 1.0;    // 上下平移
+
     const centerX = rawCenterX + offsetMapX;
     const centerZ = rawCenterZ + offsetMapZ;
 
