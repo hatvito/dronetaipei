@@ -177,7 +177,7 @@ function updateGroundMap(bounds) {
     const bd = rawBd * scaleZ;
 
     // 偏移修正：目前底圖偏右，向左平移底圖 (負值)
-    const offsetMapX = -4.2;  // 向左修正 4.2 米
+    const offsetMapX = -6.2;  // 向左修正 4.2 米
     const offsetMapZ = -1.5;  // 垂直南北向修正 1.5 米
 
     const centerX = rawCenterX + offsetMapX;
