@@ -178,7 +178,7 @@ function updateGroundMap(bounds) {
     const bd = rawBd * scale;
 
     // ★ 偏移補償 (以中間科教館為基準微調)：
-    const offsetMapX = -7.2;   // 左右平移
+    const offsetMapX = -5.5;   // 左右平移
     const offsetMapZ = 1.0;    // 上下平移
 
     const centerX = rawCenterX + offsetMapX;
