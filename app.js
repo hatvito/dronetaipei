@@ -165,10 +165,20 @@ function updateGroundMap(bounds) {
         groundPlaneMesh = null;
     }
 
-    const bw = bounds.xmax - bounds.xmin;
-    const bd = bounds.zmax - bounds.zmin;
-    const centerX = (bounds.xmin + bounds.xmax) / 2;
-    const centerZ = (bounds.zmin + bounds.zmax) / 2;
+// 原始邊界尺寸
+    const rawBw = bounds.xmax - bounds.xmin;
+    const rawBd = bounds.zmax - bounds.zmin;
+    const rawCenterX = (bounds.xmin + bounds.xmax) / 2;
+    const rawCenterZ = (bounds.zmin + bounds.zmax) / 2;
+
+    // ★ 在這裡加入對齊校正參數：
+    const offsetMapX = -12.5;  // 左右平移：負值讓底圖向左平移（將黃色圓圈拉向圓形建築）
+    const offsetMapZ = 4.0;    // 上下平移：正值讓底圖向南（下方）平移
+
+    const bw = rawBw * 1.0;    // 若長寬需要微調可乘比例（目前維持 1.0）
+    const bd = rawBd * 1.0;
+    const centerX = rawCenterX + offsetMapX;
+    const centerZ = rawCenterZ + offsetMapZ;
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
