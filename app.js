@@ -1,15 +1,21 @@
-// ========================================================
-// 無人機台北都市避障模擬賽 (真實街區 2.5D 程序化生成版)
-// ========================================================
+// =========================================================================
+// 無人機都市避障挑戰賽 - 台北士林真實街區 3D 實體長成版 (app.js)
+// =========================================================================
 
+// ------------------ 預設避障控制器策略 (具備切線繞行與脫困) ------------------
 const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器
 class StudentController {
     constructor(goal_pos) {
-        this.goal = goal_pos;
-        this.speed = 10.0;
-        this.cruise_altitude = 8.0;
-        this.sensorRange = 10.0;
-        this.repulsePower = 14.0;
+        this.goal = goal_pos; // 目標終點座標 [100.0, 14.25, 100.0]
+
+        // ★ 關鍵運動與感知參數 (繁體中文註解)
+        this.speed = 10.5;              // 最高巡航速度 (m/s，建議 8~13)
+        this.cruise_altitude = 8.5;     // 巡航基準高度 (m)
+        this.sensorRange = 11.0;        // 雷達探測距離 (m，建議 9~14)
+        this.repulsePower = 15.0;       // 障礙物推開強度 (排斥力強度)
+        this.tangentPower = 12.0;       // 切向繞行推力 (打破死角平衡)
+
+        // 脫困狀態機參數
         this.history = [];
         this.escapeTimer = 0.0;
         this.escapeDir = [0, 0, 0];
@@ -19,52 +25,63 @@ class StudentController {
         const [cx, cy, cz] = current_pos;
         const [gx, gy, gz] = this.goal;
 
+        // 1. 卡死判定 (過去約 1 秒內位移小於 0.35m)
         this.history.push([cx, cz]);
-        if (this.history.length > 35) this.history.shift();
+        if (this.history.length > 32) this.history.shift();
 
         let isStuck = false;
-        if (this.history.length === 35 && this.escapeTimer <= 0) {
+        if (this.history.length === 32 && this.escapeTimer <= 0) {
             const p0 = this.history[0];
             const disp = Math.hypot(cx - p0[0], cz - p0[1]);
-            if (disp < 0.3) isStuck = true;
+            if (disp < 0.35) isStuck = true;
         }
 
+        // 2. 觸發脫困：向最開闊的方向轉向脫困
         if (isStuck) {
             this.escapeTimer = 1.6;
             const dx = gx - cx, dz = gz - cz;
             const len = Math.hypot(dx, dz) || 1.0;
             const bx = -dx / len, bz = -dz / len;
-            const distLeft = raycast_func(current_pos, [-bz, 0, bx], 12.0);
-            const distRight = raycast_func(current_pos, [bz, 0, -bx], 12.0);
+            const distLeft = raycast_func(current_pos, [-bz, 0, bx], 14.0);
+            const distRight = raycast_func(current_pos, [bz, 0, -bx], 14.0);
             const side = distLeft > distRight ? [-bz, bx] : [bz, -bx];
-            this.escapeDir = [bx * 0.5 + side[0] * 0.8, 0, bz * 0.5 + side[1] * 0.8];
+            this.escapeDir = [bx * 0.4 + side[0] * 0.8, 0, bz * 0.4 + side[1] * 0.8];
         }
 
+        // 3. 執行脫困
         if (this.escapeTimer > 0) {
             this.escapeTimer -= dt;
             this.history = [];
             const len = Math.hypot(this.escapeDir[0], this.escapeDir[2]) || 1.0;
             return [
-                (this.escapeDir[0] / len) * (this.speed * 0.8),
-                (this.cruise_altitude - cy) * 2.0,
-                (this.escapeDir[2] / len) * (this.speed * 0.8)
+                (this.escapeDir[0] / len) * (this.speed * 0.75),
+                (this.cruise_altitude + 2.0 - cy) * 2.5,
+                (this.escapeDir[2] / len) * (this.speed * 0.75)
             ];
         }
 
+        // 4. 朝向目標引力
         const dx = gx - cx, dz = gz - cz;
         const distGoal = Math.hypot(dx, dz) || 1.0;
-        let fx = (dx / distGoal) * 2.0;
-        let fz = (dz / distGoal) * 2.0;
+        let fx = (dx / distGoal) * 2.2;
+        let fz = (dz / distGoal) * 2.2;
 
+        // 5. 16 向高密度雷達光達探測與排斥力
         const numRays = 16;
         for (let i = 0; i < numRays; i++) {
             const angle = (Math.PI * 2 / numRays) * i;
             const rx = Math.cos(angle), rz = Math.sin(angle);
             const dist = raycast_func(current_pos, [rx, 0, rz], this.sensorRange);
             if (dist < this.sensorRange) {
-                const rep = (1.0 / Math.max(dist, 0.1) - 1.0 / this.sensorRange) * this.repulsePower;
+                const rep = (1.0 / Math.max(dist, 0.15) - 1.0 / this.sensorRange) * this.repulsePower;
                 fx -= rx * rep;
                 fz -= rz * rep;
+
+                // 切向渦流力繞行
+                const cross = (dx / distGoal) * rz - (dz / distGoal) * rx;
+                const sign = cross >= 0 ? 1 : -1;
+                fx += -rz * sign * ((1.0 - dist / this.sensorRange) * (this.tangentPower / numRays));
+                fz += rx * sign * ((1.0 - dist / this.sensorRange) * (this.tangentPower / numRays));
             }
         }
 
@@ -72,6 +89,7 @@ class StudentController {
         const vx = (fx / hLen) * this.speed;
         const vz = (fz / hLen) * this.speed;
 
+        // 垂直定高與平滑進場
         const dist3D = Math.hypot(gx - cx, gy - cy, gz - cz);
         const targetY = dist3D < 14.0 ? gy : this.cruise_altitude;
         const vy = (targetY - cy) * 2.2;
@@ -80,6 +98,7 @@ class StudentController {
     }
 }`;
 
+// 編輯器儲存機制防呆
 const codeTextarea = document.getElementById('controller-code');
 let savedCode = "";
 try {
@@ -143,7 +162,7 @@ const fenceLine = new THREE.LineSegments(
 fenceLine.position.set(50, 13, 50);
 scene.add(fenceLine);
 
-// 地面材質：嘗試載入截圖空照底圖，若無則回退至科技格線
+// 地面材質 (若有 map_texture.jpg 則自動載入，否則顯示科技格線)
 const textureLoader = new THREE.TextureLoader();
 textureLoader.load('map_texture.jpg', (tex) => {
     const groundGeo = new THREE.PlaneGeometry(100, 100);
@@ -161,6 +180,7 @@ textureLoader.load('map_texture.jpg', (tex) => {
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
+// 無人機本體 (球體，半徑 0.25m)
 const DRONE_RADIUS = 0.25;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
@@ -168,6 +188,7 @@ const droneMesh = new THREE.Mesh(
 );
 scene.add(droneMesh);
 
+// 航跡繪製
 let trailPositions = [];
 let trailLine = null;
 
@@ -188,6 +209,7 @@ function appendTrail(x, y, z) {
     trailLine.geometry.computeBoundingSphere();
 }
 
+// 終點直線雷射指引線
 let laserLine = null;
 function showDirectLaser(fromPt, toPt) {
     if (laserLine) scene.remove(laserLine);
@@ -209,6 +231,7 @@ function clearLaser() {
     }
 }
 
+// 碰撞向量箭頭
 let crashArrow = null;
 function showCrashVector(pos, vel) {
     if (crashArrow) scene.remove(crashArrow);
@@ -235,7 +258,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(viewer.clientWidth, viewer.clientHeight);
 });
 
-// ------------------ 視角切換系統 ------------------
+// ------------------ 視角切換控制 ------------------
 let cameraMode = 'orbit';
 const camOrbitBtn = document.getElementById('cam-orbit-btn');
 const camFollowBtn = document.getElementById('cam-follow-btn');
@@ -283,46 +306,46 @@ function animate() {
 }
 animate();
 
-// ------------------ 依據平面真實路網長出 3D 建築 ------------------
+// ------------------ 真實建築群幾何系統 (GeoJSON Extrusion) ------------------
 const START_POS = [0, 6.25, 0];
 const GOAL_POS = [100, 14.25, 100];
 const BASE_TOTAL_DIST = Math.hypot(GOAL_POS[0] - START_POS[0], GOAL_POS[1] - START_POS[1], GOAL_POS[2] - START_POS[2]);
 const GEOFENCE = { xmin: -3.0, xmax: 103.0, zmin: -3.0, zmax: 103.0, ymax: 25.0 };
 let buildings = [];
 
-// 依據截圖路網幾何精準建構的真實街區分佈
-function generateCityFromPlanarMap() {
+// 建立單棟立體實心建築
+function addSolidBuilding(bx, bz, bw, bd, bh, colorHex, isSpecial = false) {
+    const geo = new THREE.BoxGeometry(bw, bh, bd);
+    const solidMat = new THREE.MeshLambertMaterial({ 
+        color: isSpecial ? colorHex : 0x2e323b 
+    });
+    const solidMesh = new THREE.Mesh(geo, solidMat);
+    solidMesh.position.set(bx, bh / 2, bz);
+    cityGroup.add(solidMesh);
+
+    const edgesGeo = new THREE.EdgesGeometry(geo);
+    const edgesMat = new THREE.LineBasicMaterial({ 
+        color: isSpecial ? colorHex : 0x00d2ff, 
+        transparent: true, 
+        opacity: 0.5 
+    });
+    const wireLine = new THREE.LineSegments(edgesGeo, edgesMat);
+    solidMesh.add(wireLine);
+
+    buildings.push({
+        xmin: bx - bw / 2, xmax: bx + bw / 2,
+        zmin: bz - bd / 2, zmax: bz + bd / 2,
+        height: bh,
+        mesh: solidMesh
+    });
+}
+
+// 載入真實士林建築：優先嘗試讀取 shilin.geojson，若無則啟動真實地標備案
+async function loadRealCityBuildings() {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
     }
     buildings = [];
-
-    function addSolidBuilding(bx, bz, bw, bd, bh, colorHex, isSpecial = false) {
-        const geo = new THREE.BoxGeometry(bw, bh, bd);
-        const solidMat = new THREE.MeshLambertMaterial({ 
-            color: isSpecial ? colorHex : 0x2b303c 
-        });
-        const solidMesh = new THREE.Mesh(geo, solidMat);
-        solidMesh.position.set(bx, bh / 2, bz);
-        cityGroup.add(solidMesh);
-
-        // 建築外牆冷光邊線
-        const edgesGeo = new THREE.EdgesGeometry(geo);
-        const edgesMat = new THREE.LineBasicMaterial({ 
-            color: isSpecial ? colorHex : 0x00d2ff, 
-            transparent: true, 
-            opacity: 0.5 
-        });
-        const wireLine = new THREE.LineSegments(edgesGeo, edgesMat);
-        solidMesh.add(wireLine);
-
-        buildings.push({
-            xmin: bx - bw / 2, xmax: bx + bw / 2,
-            zmin: bz - bd / 2, zmax: bz + bd / 2,
-            height: bh,
-            mesh: solidMesh
-        });
-    }
 
     // 起點停機坪 (綠色)
     addSolidBuilding(0, 0, 2.5, 2.5, 6.0, 0x00ff88, true);
@@ -333,7 +356,7 @@ function generateCityFromPlanarMap() {
     startPad.position.set(0, 6.02, 0);
     cityGroup.add(startPad);
 
-    // 終點金色停機坪
+    // 終點停機坪 (金色)
     addSolidBuilding(100, 100, 2.5, 2.5, 14.0, 0xffd700, true);
     const goalPad = new THREE.Mesh(
         new THREE.CylinderGeometry(0.8, 0.8, 0.05, 16),
@@ -342,31 +365,118 @@ function generateCityFromPlanarMap() {
     goalPad.position.set(100, 14.02, 100);
     cityGroup.add(goalPad);
 
-    // 1. 左側：科教館 / 天文館 / 兒童新樂園 大型地標聚落 (x: 10~40, z: 20~80)
-    addSolidBuilding(22, 38, 14, 12, 16.5, 0x3d4252); // 科教館本體
-    addSolidBuilding(34, 45, 11, 11, 13.0, 0x363b49); // 天文館主體
-    addSolidBuilding(18, 62, 12, 14, 11.5, 0x303542); // 兒童新樂園室內館
-    addSolidBuilding(28, 72, 10, 10, 14.0, 0x323745); // 周邊場館設施
+    let loadedFromGeoJSON = false;
 
-    // 2. 中央幹道沿線高樓群 (x: 45~65)
-    for (let z = 12; z <= 88; z += 13) {
-        addSolidBuilding(48, z, 7, 9, 15.0 + ((z * 3) % 8), 0x282c37);
-        addSolidBuilding(62, z + 3, 8, 8, 16.0 + ((z * 5) % 7), 0x282c37);
+    try {
+        const response = await fetch('shilin.geojson');
+        if (response.ok) {
+            const geojson = await response.json();
+            const features = geojson.features || [];
+
+            // 1. 取得這批建築的經緯度四極值
+            let minLon = Infinity, maxLon = -Infinity;
+            let minLat = Infinity, maxLat = -Infinity;
+
+            features.forEach(f => {
+                if (!f.geometry || !f.geometry.coordinates) return;
+                const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+                if (!coords) return;
+                coords.forEach(([lon, lat]) => {
+                    if (lon < minLon) minLon = lon;
+                    if (lon > maxLon) maxLon = lon;
+                    if (lat < minLat) minLat = lat;
+                    if (lat > maxLat) maxLat = lat;
+                });
+            });
+
+            const MAP_SIZE = 92.0;
+
+            // 2. 依多邊形拉伸長出真實建築
+            features.forEach((f, idx) => {
+                if (!f.geometry || !f.geometry.coordinates) return;
+                const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+                if (!coords || coords.length < 3) return;
+
+                const shape = new THREE.Shape();
+                let bMinX = Infinity, bMaxX = -Infinity;
+                let bMinZ = Infinity, bMaxZ = -Infinity;
+
+                coords.forEach(([lon, lat], i) => {
+                    const x = 4.0 + ((lon - minLon) / (maxLon - minLon)) * MAP_SIZE;
+                    const z = 4.0 + ((lat - minLat) / (maxLat - minLat)) * MAP_SIZE;
+
+                    bMinX = Math.min(bMinX, x);
+                    bMaxX = Math.max(bMaxX, x);
+                    bMinZ = Math.min(bMinZ, z);
+                    bMaxZ = Math.max(bMaxZ, z);
+
+                    if (i === 0) shape.moveTo(x, z);
+                    else shape.lineTo(x, z);
+                });
+
+                const cx = (bMinX + bMaxX) / 2;
+                const cz = (bMinZ + bMaxZ) / 2;
+
+                // 避開起點與終點停機區域
+                if (Math.hypot(cx, cz) < 6.5 || Math.hypot(cx - 100, cz - 100) < 6.5) return;
+
+                // 真實高度換算 (限制於 23m 內防止違反 25m 限高)
+                let rawH = parseFloat(f.properties?.height || (f.properties?.['building:levels'] ? f.properties['building:levels'] * 3.2 : null));
+                let bh = rawH ? Math.min(23.0, Math.max(6.0, rawH * 0.45)) : (8.0 + ((idx * 7) % 13));
+
+                const extrudeSettings = { depth: bh, bevelEnabled: false };
+                const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                geom.rotateX(Math.PI / 2);
+
+                const mat = new THREE.MeshLambertMaterial({ color: 0x2e3440 });
+                const mesh = new THREE.Mesh(geom, mat);
+                mesh.position.y = bh;
+                cityGroup.add(mesh);
+
+                const edges = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(geom),
+                    new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.5 })
+                );
+                mesh.add(edges);
+
+                buildings.push({
+                    xmin: bMinX, xmax: bMaxX,
+                    zmin: bMinZ, zmax: bMaxZ,
+                    height: bh,
+                    mesh: mesh
+                });
+            });
+
+            if (buildings.length > 2) {
+                loadedFromGeoJSON = true;
+                console.log(`成功由 shilin.geojson 生成真實建物共 ${buildings.length - 2} 棟！`);
+            }
+        }
+    } catch (e) {
+        console.warn("未檢測到 shilin.geojson，將啟動真實士林街區預設結構。");
     }
 
-    // 3. 右側：士林高密度密集街廓群 (x: 72~96, z: 8~92)
-    for (let x = 74; x <= 94; x += 10) {
-        for (let z = 10; z <= 90; z += 12) {
-            if (Math.hypot(x - 100, z - 100) < 8.0) continue; // 保留終點停機空間
-            const w = 6.0 + (x % 3);
-            const d = 7.0 + (z % 4);
-            const h = 10.0 + ((x * z) % 12); // 高度約 10~22m，留出穿梭空隙
-            addSolidBuilding(x, z, w, d, h, 0x242833);
-        }
+    // 若無外部 GeoJSON 檔案，啟動士林核心真實地標備案
+    if (!loadedFromGeoJSON) {
+        const fallbackLandmarks = [
+            { x: 38.5, z: 48.2, w: 18.0, d: 16.0, h: 22.0 }, // 科教館
+            { x: 52.0, z: 45.0, w: 14.5, d: 14.5, h: 15.0 }, // 天文館
+            { x: 57.0, z: 51.0, w: 8.0, d: 8.0, h: 18.0 },   // 天文館觀測台
+            { x: 22.0, z: 62.0, w: 15.0, d: 12.0, h: 16.0 }, // 兒童新樂園設施
+            { x: 26.0, z: 75.0, w: 16.0, d: 14.0, h: 12.5 }, // 兒童新樂園室內館
+            { x: 68.0, z: 32.0, w: 22.0, d: 10.0, h: 14.0 }, // 士林高商
+            { x: 62.0, z: 22.0, w: 14.0, d: 12.0, h: 13.0 }, // 士林高商活動中心
+            { x: 78.0, z: 55.0, w: 16.0, d: 8.0, h: 15.0 },  // 陽明高中校舍 A
+            { x: 82.0, z: 68.0, w: 14.0, d: 8.0, h: 15.0 },  // 陽明高中校舍 B
+            { x: 72.0, z: 78.0, w: 10.0, d: 10.0, h: 18.0 }, // 基河路大樓群 A
+            { x: 84.0, z: 82.0, w: 11.0, d: 9.0, h: 19.5 },  // 基河路大樓群 B
+            { x: 42.0, z: 30.0, w: 7.0, d: 7.0, h: 8.0 }     // 美崙公園服務處
+        ];
+        fallbackLandmarks.forEach(b => addSolidBuilding(b.x, b.z, b.w, b.d, b.h, 0x2e323b));
     }
 }
 
-// 球體實體碰撞檢測 (AABB + 邊界)
+// ------------------ 物理碰撞與光達 (CCD + AABB) ------------------
 function checkSphereCollision(pos) {
     const [x, y, z] = pos;
     const r = DRONE_RADIUS;
@@ -389,7 +499,9 @@ function checkSphereCollision(pos) {
 
         const distSq = (x - cx)**2 + (y - cy)**2 + (z - cz)**2;
         if (distSq <= (r * 0.96)**2) {
-            if (b.mesh) b.mesh.material.color.setHex(0xff0044);
+            if (b.mesh && b.mesh.material) {
+                b.mesh.material.color.setHex(0xff0044);
+            }
             return { 
                 hit: true, 
                 reason: "撞擊台北市建物外牆", 
@@ -424,7 +536,7 @@ function checkContinuousPath(p1, p2, step = 0.03) {
     return { hit: false };
 }
 
-// 光達淨距探測
+// 光達淨距探測函式
 function raycastSafe(origin, direction, maxDist = 15.0) {
     const dLen = Math.hypot(direction[0], direction[1], direction[2]);
     if (dLen === 0) return maxDist;
@@ -442,7 +554,7 @@ function raycastSafe(origin, direction, maxDist = 15.0) {
     return maxDist;
 }
 
-// ------------------ 結算與日誌 ------------------
+// ------------------ 儀表板與黑盒子日誌系統 ------------------
 let flightLogs = [];
 let flightEvents = [];
 let flightSummary = null;
@@ -475,12 +587,12 @@ function updateScoreboard(pos, status) {
     return remain3D;
 }
 
-function resetScene() {
+async function resetScene() {
     if (simInterval) clearInterval(simInterval);
     clearLaser();
     clearCrashVector();
     clearTrail();
-    generateCityFromPlanarMap();
+    await loadRealCityBuildings();
 
     droneMesh.position.set(...START_POS);
     activeVelocity = [1.0, 0.0, 1.0];
@@ -503,7 +615,7 @@ function resetScene() {
     updateScoreboard(START_POS, "待命出發");
 }
 
-// ------------------ 事件綁定 ------------------
+// ------------------ 介面事件綁定 ------------------
 document.getElementById('random-seed-btn').addEventListener('click', resetScene);
 document.getElementById('apply-seed-btn').addEventListener('click', resetScene);
 
@@ -521,19 +633,24 @@ document.getElementById('copy-prompt-btn').addEventListener('click', () => {
 document.getElementById('download-log-btn').addEventListener('click', () => {
     if (!flightSummary) return;
     let content = `=======================================================================\n`;
-    content += `        無人機黑盒子飛行紀錄 (台北真實路網 2.5D 生成版)        \n`;
+    content += `        無人機黑盒子飛行紀錄 (台北士林真實街區版)        \n`;
     content += `=======================================================================\n`;
+    content += `產出時間             : ${new Date().toLocaleString()}\n`;
     content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
     content += `最終任務狀態         : ${flightSummary.status}\n`;
     content += `最後座標位置 [X,Y,Z] : [${flightSummary.finalPos.join(', ')}]\n`;
     content += `直達終點 3D 剩餘距離 : ${flightSummary.remainDist} 公尺\n`;
     content += `航程探索達成率       : ${flightSummary.progress} %\n\n`;
 
+    content += `-----------------------------------------------------------------------\n`;
+    content += `【飛行歷程摘要】\n`;
+    flightEvents.forEach(evt => content += `${evt}\n`);
+
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `drone_fdr_taipei_${Date.now()}.txt`;
+    a.download = `drone_fdr_shilin_${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
 });
@@ -541,8 +658,8 @@ document.getElementById('download-log-btn').addEventListener('click', () => {
 // ------------------ 模擬執行迴圈 ------------------
 let simInterval = null;
 
-document.getElementById('run-btn').addEventListener('click', () => {
-    resetScene();
+document.getElementById('run-btn').addEventListener('click', async () => {
+    await resetScene();
 
     let controllerInstance = null;
     try {
@@ -557,7 +674,7 @@ document.getElementById('run-btn').addEventListener('click', () => {
     flightLogs = [];
     flightEvents = [];
     flightSummary = null;
-    addFlightEvent(0.0, `無人機從起點 (0.00, 6.25, 0.00) 啟動起飛。`);
+    addFlightEvent(0.0, `無人機從起點停機坪 (0.00, 6.25, 0.00) 啟動起飛。`);
 
     let currentPos = [...START_POS];
     droneMesh.position.set(...currentPos);
@@ -602,6 +719,7 @@ document.getElementById('run-btn').addEventListener('click', () => {
             currentPos[2] + vel[2] * dt
         ];
 
+        // 連續碰撞檢測
         const collision = checkContinuousPath(currentPos, nextPos);
         if (collision.hit) {
             clearInterval(simInterval);
@@ -629,6 +747,7 @@ document.getElementById('run-btn').addEventListener('click', () => {
             currentPos[2] - GOAL_POS[2]
         );
 
+        // 完賽判定
         if (distToGoal < 1.5) {
             clearInterval(simInterval);
             statusEl.innerText = "🎉 成功抵達終點！";
@@ -638,6 +757,7 @@ document.getElementById('run-btn').addEventListener('click', () => {
             return;
         }
 
+        // 超時判定 (200秒)
         if (timer > 200.0) {
             clearInterval(simInterval);
             statusEl.innerText = "任務超時";
@@ -656,12 +776,4 @@ function finalizeFlight(finalPos, duration, statusText) {
         duration: duration.toFixed(2),
         finalPos: finalPos.map(v => v.toFixed(2)),
         status: statusText,
-        remainDist: remain3D.toFixed(2),
-        progress: progress.toFixed(1)
-    };
-
-    const logBtn = document.getElementById('download-log-btn');
-    if (logBtn) logBtn.disabled = false;
-}
-
-resetScene();
+        remainDist
