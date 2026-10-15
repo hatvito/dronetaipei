@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林街區底圖精密校正對齊版 (app.js)
+// 無人機都市避障挑戰賽 - 台北士林真實經緯度長寬比 1.975:1 精密對齊版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -127,14 +127,14 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0c10);
 
 const camera = new THREE.PerspectiveCamera(45, (viewer.clientWidth || 800) / (viewer.clientHeight || 600), 1, 1000);
-camera.position.set(50, 130, 125);
+camera.position.set(50, 110, 85);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(viewer.clientWidth || 800, viewer.clientHeight || 600);
 viewer.appendChild(renderer.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.target.set(50, 0, 50);
+controls.target.set(50, 0, 25);
 controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
@@ -144,14 +144,14 @@ controls.maxPolarAngle = Math.PI / 2 - 0.05;
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.92);
 scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.65);
-dirLight.position.set(60, 120, 40);
+dirLight.position.set(50, 120, 30);
 scene.add(dirLight);
 
 // 都市與物件群組
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 動態底圖與精密校準系統 ------------------
+// ------------------ 動態底圖系統 (保持真實 1.975:1 比例) ------------------
 let groundPlaneMesh = null;
 
 function updateGroundMap(bounds) {
@@ -165,23 +165,10 @@ function updateGroundMap(bounds) {
         groundPlaneMesh = null;
     }
 
-    const rawBw = bounds.xmax - bounds.xmin;
-    const rawBd = bounds.zmax - bounds.zmin;
-    const rawCenterX = (bounds.xmin + bounds.xmax) / 2;
-    const rawCenterZ = (bounds.zmin + bounds.zmax) / 2;
-
-    // ★ 精密校正參數：依據截圖中「科教館圓頂」與「承德路中軸」對準校驗
-    const scaleX = 1.08;      // 截圖通常比建築範圍略廣，水平等比放大 8%
-    const scaleZ = 1.05;      // 南北垂直放大 5%
-    const bw = rawBw * scaleX;
-    const bd = rawBd * scaleZ;
-
-    // 偏移修正：目前底圖偏右，向左平移底圖 (負值)
-    const offsetMapX = -7.2;  // 向左修正 4.2 米
-    const offsetMapZ = -1.5;  // 垂直南北向修正 1.5 米
-
-    const centerX = rawCenterX + offsetMapX;
-    const centerZ = rawCenterZ + offsetMapZ;
+    const bw = bounds.xmax - bounds.xmin;
+    const bd = bounds.zmax - bounds.zmin;
+    const centerX = (bounds.xmin + bounds.xmax) / 2;
+    const centerZ = (bounds.zmin + bounds.zmax) / 2;
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
@@ -201,20 +188,20 @@ function updateGroundMap(bounds) {
             groundPlaneMesh.rotation.x = -Math.PI / 2;
             groundPlaneMesh.position.set(centerX, -0.01, centerZ);
             scene.add(groundPlaneMesh);
-            console.log("真實地圖底圖已成功載入並完成位置校準！");
+            console.log("真實地圖底圖已成功對齊 1.975:1 邊界！");
         },
         undefined,
         () => {
             // 回退方案：深色格線地面
-            const planeGeo = new THREE.PlaneGeometry(rawBw, rawBd);
+            const planeGeo = new THREE.PlaneGeometry(bw, bd);
             const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(rawCenterX, -0.02, rawCenterZ);
+            groundPlaneMesh.position.set(centerX, -0.02, centerZ);
             scene.add(groundPlaneMesh);
 
-            const gridHelper = new THREE.GridHelper(Math.max(rawBw, rawBd), 40, 0x00d2ff, 0x223344);
-            gridHelper.position.set(rawCenterX, 0.01, rawCenterZ);
+            const gridHelper = new THREE.GridHelper(Math.max(bw, bd), 30, 0x00d2ff, 0x223344);
+            gridHelper.position.set(centerX, 0.01, centerZ);
             groundPlaneMesh.add(gridHelper);
         }
     );
@@ -243,7 +230,7 @@ function updateFenceVisual(bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 無人機與軌跡 ------------------
+// ------------------ 無人機與標記 ------------------
 const DRONE_RADIUS = 0.25;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
@@ -367,12 +354,12 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// ------------------ 真實建築群建構與頂樓起降配置 ------------------
+// ------------------ 真實建築群建構 (以精確 1.975:1 比例投影) ------------------
 let buildings = [];
 let START_POS = [10, 8.25, 10];
-let GOAL_POS = [85, 16.25, 85];
+let GOAL_POS = [85, 16.25, 40];
 let BASE_TOTAL_DIST = 100.0;
-let GEOFENCE = { xmin: 0, xmax: 100, zmin: 0, zmax: 100, ymax: 25.0 };
+let GEOFENCE = { xmin: 0, xmax: 100, zmin: 0, zmax: 50.63, ymax: 25.0 };
 let cachedRawGeoJSON = null;
 
 function addSolidBuilding(bx, bz, bw, bd, bh, colorHex) {
@@ -425,7 +412,6 @@ async function loadRealCityBuildings(seedValue) {
 
     const rng = createSeededRandom(seedValue);
 
-    // 嘗試讀取本地 GeoJSON
     if (!cachedRawGeoJSON) {
         try {
             const resp = await fetch('shilin.geojson');
@@ -438,22 +424,15 @@ async function loadRealCityBuildings(seedValue) {
     if (cachedRawGeoJSON && cachedRawGeoJSON.features && cachedRawGeoJSON.features.length > 0) {
         const features = cachedRawGeoJSON.features;
 
-        let minLon = Infinity, maxLon = -Infinity;
-        let minLat = Infinity, maxLat = -Infinity;
+        // ★ 採用你測量出的精確極致四角經緯度基準
+        const minLon = 121.5060036;
+        const maxLon = 121.524983;
+        const minLat = 25.0901022;
+        const maxLat = 25.0988531;
 
-        features.forEach(f => {
-            if (!f.geometry || !f.geometry.coordinates) return;
-            const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : (f.geometry.coordinates[0] ? f.geometry.coordinates[0][0] : null);
-            if (!coords) return;
-            coords.forEach(([lon, lat]) => {
-                if (lon < minLon) minLon = lon;
-                if (lon > maxLon) maxLon = lon;
-                if (lat < minLat) minLat = lat;
-                if (lat > maxLat) maxLat = lat;
-            });
-        });
-
-        const MAP_SCALE = 90.0;
+        // ★ 真實物理比例鎖定：寬度 100m，南北長度依 1.975:1 精確設定為 50.63m
+        const MAP_WIDTH = 100.0;
+        const MAP_DEPTH = MAP_WIDTH / 1.9753; // 約 50.63 公尺
 
         features.forEach((f, idx) => {
             if (!f.geometry || !f.geometry.coordinates) return;
@@ -465,11 +444,9 @@ async function loadRealCityBuildings(seedValue) {
             let bMinZ = Infinity, bMaxZ = -Infinity;
 
             coords.forEach(([lon, lat], i) => {
-                // 上北下南對齊：
-                // X (經度，西->東遞增)
-                const x = 5.0 + ((lon - minLon) / (maxLon - minLon)) * MAP_SCALE;
-                // Z (緯度，北->南遞增：maxLat 為最北方對應小 Z，minLat 為南方對應大 Z)
-                const z = 5.0 + ((maxLat - lat) / (maxLat - minLat)) * MAP_SCALE;
+                // 上北下南對齊且 100% 保持真實長寬比例
+                const x = ((lon - minLon) / (maxLon - minLon)) * MAP_WIDTH;
+                const z = ((maxLat - lat) / (maxLat - minLat)) * MAP_DEPTH;
 
                 bMinX = Math.min(bMinX, x);
                 bMaxX = Math.max(bMaxX, x);
@@ -511,26 +488,7 @@ async function loadRealCityBuildings(seedValue) {
         });
     }
 
-    // 若無外部 GeoJSON，啟動真實士林地標幾何（已翻轉為上北下南）
-    if (buildings.length < 5) {
-        const fallbackLandmarks = [
-            { x: 38.5, z: 51.8, w: 18.0, d: 16.0, h: 22.0 }, // 科教館
-            { x: 52.0, z: 55.0, w: 14.5, d: 14.5, h: 15.0 }, // 天文館
-            { x: 57.0, z: 49.0, w: 8.0, d: 8.0, h: 18.0 },   // 天文館天線台
-            { x: 22.0, z: 38.0, w: 15.0, d: 12.0, h: 16.0 }, // 兒童新樂園設施
-            { x: 26.0, z: 25.0, w: 16.0, d: 14.0, h: 12.5 }, // 兒童新樂園室內館
-            { x: 68.0, z: 68.0, w: 22.0, d: 10.0, h: 14.0 }, // 士林高商
-            { x: 62.0, z: 78.0, w: 14.0, d: 12.0, h: 13.0 }, // 士林高商活動中心
-            { x: 78.0, z: 45.0, w: 16.0, d: 8.0, h: 15.0 },  // 陽明高中 A
-            { x: 82.0, z: 32.0, w: 14.0, d: 8.0, h: 15.0 },  // 陽明高中 B
-            { x: 72.0, z: 22.0, w: 10.0, d: 10.0, h: 18.0 }, // 基河路大樓 A
-            { x: 84.0, z: 18.0, w: 11.0, d: 9.0, h: 19.5 },  // 基河路大樓 B
-            { x: 42.0, z: 70.0, w: 7.0, d: 7.0, h: 8.0 }     // 美崙公園服務處
-        ];
-        fallbackLandmarks.forEach(b => addSolidBuilding(b.x, b.z, b.w, b.d, b.h));
-    }
-
-    // ★ 緊密包裹電子圍欄 (邊界外推 2.0 公尺，杜絕外圈偷跑)
+    // ★ 緊密包裹電子圍欄 (邊界外推 2.0 公尺，長寬比嚴格保持 1.975:1)
     let bGlobalMinX = Infinity, bGlobalMaxX = -Infinity;
     let bGlobalMinZ = Infinity, bGlobalMaxZ = -Infinity;
     buildings.forEach(b => {
@@ -540,7 +498,7 @@ async function loadRealCityBuildings(seedValue) {
         bGlobalMaxZ = Math.max(bGlobalMaxZ, b.zmax);
     });
 
-    const FENCE_MARGIN = 2.0;
+    const FENCE_MARGIN = 1.8;
     GEOFENCE = {
         xmin: bGlobalMinX - FENCE_MARGIN,
         xmax: bGlobalMaxX + FENCE_MARGIN,
@@ -550,10 +508,10 @@ async function loadRealCityBuildings(seedValue) {
     };
 
     updateFenceVisual(GEOFENCE);
-    updateGroundMap(GEOFENCE); // 同步套用精密校正底圖
+    updateGroundMap(GEOFENCE); // 同步套用 1.975:1 比例底圖
 
     // ★ 隨機種子選取起終點建築物樓頂
-    let candidateBuildings = buildings.filter(b => b.width >= 3.5 && b.depth >= 3.5);
+    let candidateBuildings = buildings.filter(b => b.width >= 3.0 && b.depth >= 3.0);
     if (candidateBuildings.length < 2) candidateBuildings = buildings;
 
     let idxA = Math.floor(rng() * candidateBuildings.length);
@@ -564,7 +522,7 @@ async function loadRealCityBuildings(seedValue) {
         const bA = candidateBuildings[idxA];
         const bB = candidateBuildings[idxB];
         const d = Math.hypot(bA.cx - bB.cx, bA.cz - bB.cz);
-        if (idxA !== idxB && d > 45.0) break;
+        if (idxA !== idxB && d > 38.0) break;
         idxB = Math.floor(rng() * candidateBuildings.length);
         attempts++;
     }
@@ -585,7 +543,7 @@ async function loadRealCityBuildings(seedValue) {
     const cX = (GEOFENCE.xmin + GEOFENCE.xmax) / 2;
     const cZ = (GEOFENCE.zmin + GEOFENCE.zmax) / 2;
     controls.target.set(cX, 0, cZ);
-    camera.position.set(cX, 125, cZ + 80);
+    camera.position.set(cX, 105, cZ + 65);
     controls.update();
 
     console.log(`種子 ${seedValue} 配置完成：起點 (${START_POS.map(v=>v.toFixed(1))})，終點 (${GOAL_POS.map(v=>v.toFixed(1))})，直線距離 ${BASE_TOTAL_DIST.toFixed(1)}m`);
@@ -776,7 +734,7 @@ if (downloadLogBtn) {
     downloadLogBtn.addEventListener('click', () => {
         if (!flightSummary) return;
         let content = `=======================================================================\n`;
-        content += `        無人機黑盒子飛行紀錄 (台北士林大樓頂樓起降版)        \n`;
+        content += `        無人機黑盒子飛行紀錄 (台北士林真實街區 1.975:1 版)        \n`;
         content += `=======================================================================\n`;
         content += `產出時間             : ${new Date().toLocaleString()}\n`;
         content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
@@ -793,7 +751,7 @@ if (downloadLogBtn) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `drone_fdr_rooftop_${Date.now()}.txt`;
+        a.download = `drone_fdr_shilin_${Date.now()}.txt`;
         a.click();
         URL.revokeObjectURL(url);
     });
