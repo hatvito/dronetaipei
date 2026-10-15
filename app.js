@@ -172,7 +172,7 @@ function updateGroundMap(bounds) {
     const rawCenterZ = (bounds.zmin + bounds.zmax) / 2;
 
     // ★ 在這裡加入對齊校正參數：
-    const offsetMapX = -5.2;  // 左右平移：負值讓底圖向左平移（將黃色圓圈拉向圓形建築）
+    const offsetMapX = -5.7;  // 左右平移：負值讓底圖向左平移（將黃色圓圈拉向圓形建築）
     const offsetMapZ = 0.7;    // 上下平移：正值讓底圖向南（下方）平移
 
     const bw = rawBw * 1.0;    // 若長寬需要微調可乘比例（目前維持 1.0）
