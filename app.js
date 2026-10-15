@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林街區底圖對齊與隨機頂樓任務版 (app.js)
+// 無人機都市避障挑戰賽 - 台北士林街區底圖精密校正對齊版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -93,7 +93,7 @@ class StudentController {
     }
 }`;
 
-// 編輯器儲存機制防呆
+// 程式碼編輯器預載防呆
 const codeTextarea = document.getElementById('controller-code');
 let savedCode = "";
 try {
@@ -151,7 +151,7 @@ scene.add(dirLight);
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 動態底圖與地面系統 ------------------
+// ------------------ 動態底圖與精密校準系統 ------------------
 let groundPlaneMesh = null;
 
 function updateGroundMap(bounds) {
@@ -165,10 +165,23 @@ function updateGroundMap(bounds) {
         groundPlaneMesh = null;
     }
 
-    const bw = bounds.xmax - bounds.xmin;
-    const bd = bounds.zmax - bounds.zmin;
-    const centerX = (bounds.xmin + bounds.xmax) / 2;
-    const centerZ = (bounds.zmin + bounds.zmax) / 2;
+    const rawBw = bounds.xmax - bounds.xmin;
+    const rawBd = bounds.zmax - bounds.zmin;
+    const rawCenterX = (bounds.xmin + bounds.xmax) / 2;
+    const rawCenterZ = (bounds.zmin + bounds.zmax) / 2;
+
+    // ★ 精密校正參數：依據截圖中「科教館圓頂」與「承德路中軸」對準校驗
+    const scaleX = 1.08;      // 截圖通常比建築範圍略廣，水平等比放大 8%
+    const scaleZ = 1.05;      // 南北垂直放大 5%
+    const bw = rawBw * scaleX;
+    const bd = rawBd * scaleZ;
+
+    // 偏移修正：目前底圖偏右，向左平移底圖 (負值)
+    const offsetMapX = -4.2;  // 向左修正 4.2 米
+    const offsetMapZ = -1.5;  // 垂直南北向修正 1.5 米
+
+    const centerX = rawCenterX + offsetMapX;
+    const centerZ = rawCenterZ + offsetMapZ;
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
@@ -188,20 +201,20 @@ function updateGroundMap(bounds) {
             groundPlaneMesh.rotation.x = -Math.PI / 2;
             groundPlaneMesh.position.set(centerX, -0.01, centerZ);
             scene.add(groundPlaneMesh);
-            console.log("真實地圖底圖已成功載入並對齊邊界！");
+            console.log("真實地圖底圖已成功載入並完成位置校準！");
         },
         undefined,
         () => {
             // 回退方案：深色格線地面
-            const planeGeo = new THREE.PlaneGeometry(bw, bd);
+            const planeGeo = new THREE.PlaneGeometry(rawBw, rawBd);
             const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(centerX, -0.02, centerZ);
+            groundPlaneMesh.position.set(rawCenterX, -0.02, rawCenterZ);
             scene.add(groundPlaneMesh);
 
-            const gridHelper = new THREE.GridHelper(Math.max(bw, bd), 40, 0x00d2ff, 0x223344);
-            gridHelper.position.set(centerX, 0.01, centerZ);
+            const gridHelper = new THREE.GridHelper(Math.max(rawBw, rawBd), 40, 0x00d2ff, 0x223344);
+            gridHelper.position.set(rawCenterX, 0.01, rawCenterZ);
             groundPlaneMesh.add(gridHelper);
         }
     );
@@ -230,7 +243,7 @@ function updateFenceVisual(bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 無人機與標記 ------------------
+// ------------------ 無人機與軌跡 ------------------
 const DRONE_RADIUS = 0.25;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
@@ -537,7 +550,7 @@ async function loadRealCityBuildings(seedValue) {
     };
 
     updateFenceVisual(GEOFENCE);
-    updateGroundMap(GEOFENCE); // 同步對齊底圖
+    updateGroundMap(GEOFENCE); // 同步套用精密校正底圖
 
     // ★ 隨機種子選取起終點建築物樓頂
     let candidateBuildings = buildings.filter(b => b.width >= 3.5 && b.depth >= 3.5);
@@ -575,7 +588,7 @@ async function loadRealCityBuildings(seedValue) {
     camera.position.set(cX, 125, cZ + 80);
     controls.update();
 
-    console.log(`種子 ${seedValue} 成功配置任務：起點位於大樓頂 (${START_POS.map(v=>v.toFixed(1))})，終點位於大樓頂 (${GOAL_POS.map(v=>v.toFixed(1))})，總直線距 ${BASE_TOTAL_DIST.toFixed(1)}m`);
+    console.log(`種子 ${seedValue} 配置完成：起點 (${START_POS.map(v=>v.toFixed(1))})，終點 (${GOAL_POS.map(v=>v.toFixed(1))})，直線距離 ${BASE_TOTAL_DIST.toFixed(1)}m`);
 }
 
 // ------------------ 物理碰撞與連續路徑細分檢測 ------------------
@@ -601,7 +614,6 @@ function checkSphereCollision(pos) {
 
         const distSq = (x - cx)**2 + (y - cy)**2 + (z - cz)**2;
         if (distSq <= (r * 0.95)**2) {
-            // 起降保護：若處於停機坪正上方且貼地，不誤判碰撞
             const isAtStartPad = Math.hypot(x - START_POS[0], z - START_POS[2]) < 1.3 && Math.abs(y - START_POS[1]) < 0.3;
             const isAtGoalPad = Math.hypot(x - GOAL_POS[0], z - GOAL_POS[2]) < 1.3 && Math.abs(y - GOAL_POS[1]) < 0.3;
             if (isAtStartPad || isAtGoalPad) continue;
@@ -853,7 +865,6 @@ if (runBtn) {
                 currentPos[2] + vel[2] * dt
             ];
 
-            // 連續路徑細分碰撞檢測 (CCD)
             const collision = checkContinuousPath(currentPos, nextPos);
             if (collision.hit) {
                 clearInterval(simInterval);
@@ -881,7 +892,6 @@ if (runBtn) {
                 currentPos[2] - GOAL_POS[2]
             );
 
-            // 成功降落判定 (到達目標樓頂 1.6m 範圍內)
             if (distToGoal < 1.6) {
                 clearInterval(simInterval);
                 statusEl.innerText = "🎉 成功降落於目標大樓頂！";
@@ -891,7 +901,6 @@ if (runBtn) {
                 return;
             }
 
-            // 超時判定 (200 秒)
             if (timer > 200.0) {
                 clearInterval(simInterval);
                 statusEl.innerText = "任務超時";
