@@ -173,7 +173,7 @@ function updateGroundMap(bounds) {
 
     // ★ 關鍵縮放校正：
     // 目前兩側建築比底圖散得更開（底圖太小），將底圖放大 18% (1.18) 讓地圖張開去接兩側的大樓
-    const scale = 1.18; 
+    const scale = 1.03; 
     const bw = rawBw * scale;
     const bd = rawBd * scale;
 
