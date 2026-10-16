@@ -330,3 +330,6 @@ body, html {
     overflow-y: auto;
     margin: 12px 0;
 }
+#map-calibrator {
+    display: none !important;
+}
