@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林雙軸獨立校準版 (app.js)
+// 無人機都市避障挑戰賽 - 台北士林萬種種子 & 緊縮空域強化版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -30,7 +30,7 @@ class StudentController {
         if (this.history.length === 30 && this.escapeTimer <= 0) {
             const p0 = this.history[0];
             const disp = Math.hypot(cx - p0[0], cz - p0[1]);
-            if (disp < 0.3) isStuck = true;
+            if (disp < 0.25) isStuck = true;
         }
 
         if (isStuck) {
@@ -68,7 +68,7 @@ class StudentController {
             const rx = Math.cos(angle), rz = Math.sin(angle);
             const dist = raycast_func(current_pos, [rx, 0, rz], this.sensorRange);
             if (dist < this.sensorRange) {
-                const rep = (1.0 / Math.max(dist, 0.15) - 1.0 / this.sensorRange) * this.repulsePower;
+                const rep = (1.0 / Math.max(dist, 0.1) - 1.0 / this.sensorRange) * this.repulsePower;
                 fx -= rx * rep;
                 fz -= rz * rep;
 
@@ -85,7 +85,7 @@ class StudentController {
 
         // 4. 自適應垂直高度與進場降落
         const dist3D = Math.hypot(gx - cx, gy - cy, gz - cz);
-        const targetY = dist3D < 12.0 ? gy : Math.max(this.cruise_altitude, gy + 2.0);
+        const targetY = dist3D < 10.0 ? gy : Math.max(this.cruise_altitude, gy + 2.0);
         const vy = (targetY - cy) * 2.2;
 
         return [vx, vy, vz];
@@ -150,22 +150,20 @@ scene.add(dirLight);
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 🗺️ 支援獨立南北長寬比校準的底圖系統 ------------------
+// ------------------ 🗺️ 底圖精密校準參數 (已鎖定最佳值) ------------------
 let groundPlaneMesh = null;
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
-// 預設校準參數 (包含 scaleZ 獨立拉伸)
+// ★ 已校準鎖定之最佳數值
 let calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 try {
     const saved = localStorage.getItem('shilin_map_calibration');
     if (saved) calibData = Object.assign(calibData, JSON.parse(saved));
 } catch (e) {}
 
-// ★ 核心方法：X (東西) 與 Z (南北) 獨立縮放，解決上下偏離問題
 function applyGroundTransform() {
     if (!groundPlaneMesh) return;
-
     const sx = calibData.scale;
     const sz = calibData.scale * (calibData.scaleZ !== undefined ? calibData.scaleZ : 1.0);
 
@@ -175,7 +173,6 @@ function applyGroundTransform() {
     const cz = (currentBaseD / 2) + calibData.offsetZ;
     groundPlaneMesh.position.set(cx, -0.01, cz);
 
-    // 更新面板 UI 顯示
     const elScale = document.getElementById('val-scale');
     const elScaleZ = document.getElementById('val-scale-z');
     const elX = document.getElementById('val-x');
@@ -188,12 +185,8 @@ function applyGroundTransform() {
     if (elX) elX.innerText = Number(calibData.offsetX).toFixed(2);
     if (elZ) elZ.innerText = Number(calibData.offsetZ).toFixed(2);
 
-    if (inputScale && document.activeElement !== inputScale) {
-        inputScale.value = calibData.scale;
-    }
-    if (inputScaleZ && document.activeElement !== inputScaleZ) {
-        inputScaleZ.value = calibData.scaleZ || 1.0;
-    }
+    if (inputScale && document.activeElement !== inputScale) inputScale.value = calibData.scale;
+    if (inputScaleZ && document.activeElement !== inputScaleZ) inputScaleZ.value = calibData.scaleZ || 1.0;
 }
 
 function updateGroundMap(mapWidth, mapDepth) {
@@ -229,7 +222,6 @@ function updateGroundMap(mapWidth, mapDepth) {
             scene.add(groundPlaneMesh);
 
             applyGroundTransform();
-            console.log("底圖 map_shilin.png 載入完成，已套用校準！");
         },
         undefined,
         () => {
@@ -243,93 +235,7 @@ function updateGroundMap(mapWidth, mapDepth) {
     );
 }
 
-// ------------------ 綁定控制項：實體按鈕、雙滑桿、鍵盤 ------------------
-function setupCalibrationControls() {
-    const inputScale = document.getElementById('input-scale');
-    const inputScaleZ = document.getElementById('input-scale-z');
-    const btnUp = document.getElementById('btn-move-up');
-    const btnDown = document.getElementById('btn-move-down');
-    const btnLeft = document.getElementById('btn-move-left');
-    const btnRight = document.getElementById('btn-move-right');
-    const btnSave = document.getElementById('btn-save-calib');
-    const btnReset = document.getElementById('btn-reset-calib');
-    const calibHint = document.getElementById('calib-hint');
-
-    // 1. 整體縮放滑桿
-    if (inputScale) {
-        inputScale.value = calibData.scale;
-        inputScale.addEventListener('input', (e) => {
-            calibData.scale = parseFloat(e.target.value);
-            applyGroundTransform();
-        });
-    }
-
-    // 2. 南北拉伸/壓縮滑桿
-    if (inputScaleZ) {
-        inputScaleZ.value = calibData.scaleZ || 1.0;
-        inputScaleZ.addEventListener('input', (e) => {
-            calibData.scaleZ = parseFloat(e.target.value);
-            applyGroundTransform();
-        });
-    }
-
-    function moveMap(dx, dz) {
-        calibData.offsetX += dx;
-        calibData.offsetZ += dz;
-        applyGroundTransform();
-    }
-
-    // 3. 實體方向按鈕
-    if (btnUp) btnUp.addEventListener('click', () => moveMap(0, -0.5));
-    if (btnDown) btnDown.addEventListener('click', () => moveMap(0, 0.5));
-    if (btnLeft) btnLeft.addEventListener('click', () => moveMap(-0.5, 0));
-    if (btnRight) btnRight.addEventListener('click', () => moveMap(0.5, 0));
-
-    // 4. 鍵盤監聽
-    window.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-        const step = e.shiftKey ? 1.5 : 0.3;
-        let changed = false;
-
-        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
-        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
-        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
-        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
-
-        if (changed) {
-            e.preventDefault();
-            applyGroundTransform();
-        }
-    });
-
-    // 5. 儲存至 LocalStorage 並複製代碼
-    if (btnSave) {
-        btnSave.addEventListener('click', () => {
-            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
-            const exportSnippet = `// 士林底圖最佳對齊參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, scaleZ: ${(calibData.scaleZ || 1.0).toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
-            navigator.clipboard.writeText(exportSnippet).then(() => {
-                if (calibHint) {
-                    calibHint.innerText = `✅ 已儲存！(Scale:${calibData.scale.toFixed(3)}, Z-Scale:${(calibData.scaleZ || 1.0).toFixed(3)}, X:${calibData.offsetX.toFixed(2)}, Z:${calibData.offsetZ.toFixed(2)})`;
-                    calibHint.style.display = 'block';
-                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
-                }
-            });
-        });
-    }
-
-    // 6. 重設
-    if (btnReset) {
-        btnReset.addEventListener('click', () => {
-            calibData = { scale: 1.0, scaleZ: 1.0, offsetX: 0.0, offsetZ: 0.0 };
-            localStorage.removeItem('shilin_map_calibration');
-            applyGroundTransform();
-        });
-    }
-
-    applyGroundTransform();
-}
-
-// ------------------ 電子圍欄可視化 ------------------
+// ------------------ 緊縮型電子圍欄可視化 ------------------
 let fenceLineSegments = null;
 function updateFenceVisual(bounds) {
     if (fenceLineSegments) scene.remove(fenceLineSegments);
@@ -342,7 +248,7 @@ function updateFenceVisual(bounds) {
     const fenceWire = new THREE.WireframeGeometry(fenceGeo);
     fenceLineSegments = new THREE.LineSegments(
         fenceWire,
-        new THREE.LineBasicMaterial({ color: 0x0088cc, transparent: true, opacity: 0.35 })
+        new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.45 })
     );
     fenceLineSegments.position.set(
         (bounds.xmin + bounds.xmax) / 2,
@@ -352,8 +258,8 @@ function updateFenceVisual(bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 無人機與軌跡 ------------------
-const DRONE_RADIUS = 0.25;
+// ------------------ 無人機縮小 (直徑 24cm) ------------------
+const DRONE_RADIUS = 0.12; // 縮小為 0.12m
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0x00ffff })
@@ -458,47 +364,55 @@ function animate() {
         let vx = activeVelocity[0], vz = activeVelocity[2];
         let vLen = Math.hypot(vx, vz) || 1.0;
         const nx = vx / vLen, nz = vz / vLen;
-        camera.position.x += (dp.x - nx * 5.5 - camera.position.x) * 0.15;
-        camera.position.y += (dp.y + 3.0 - camera.position.y) * 0.15;
-        camera.position.z += (dp.z - nz * 5.5 - camera.position.z) * 0.15;
-        camera.lookAt(dp.x + nx * 2.5, dp.y + 0.5, dp.z + nz * 2.5);
+        camera.position.x += (dp.x - nx * 4.5 - camera.position.x) * 0.15;
+        camera.position.y += (dp.y + 2.5 - camera.position.y) * 0.15;
+        camera.position.z += (dp.z - nz * 4.5 - camera.position.z) * 0.15;
+        camera.lookAt(dp.x + nx * 2.0, dp.y + 0.3, dp.z + nz * 2.0);
     }
     renderer.render(scene, camera);
 }
 animate();
 
-// ------------------ 偽隨機種子生成器 ------------------
+// ------------------ 0000~9999 萬種種子高離散 PRNG ------------------
 function createSeededRandom(seedInt) {
-    let s = Math.abs(seedInt) || 1;
+    let s = Math.abs(seedInt) % 10000;
+    // 32-bit Murmur3 變體雜湊，保證 0~9999 的微小變動能產生完全不同分布
+    s = ((s ^ 0x6D2B79F5) * 0x85EBCA6B) >>> 0;
+    s = ((s ^ (s >>> 13)) * 0xC2B2AE35) >>> 0;
+    let state = (s ^ (s >>> 16)) >>> 0;
     return function() {
-        s = (s * 9301 + 49297) % 233280;
-        return s / 233280;
+        state = (state + 0x9E3779B9) >>> 0;
+        let z = state;
+        z = ((z ^ (z >>> 16)) * 0x85EBCA6B) >>> 0;
+        z = ((z ^ (z >>> 13)) * 0xC2B2AE35) >>> 0;
+        return ((z ^ (z >>> 16)) >>> 0) / 4294967296;
     };
 }
 
-// ------------------ 建築群載入與動態尺寸計算 ------------------
+// ------------------ 建築群載入與緊縮圍籬 ------------------
 let buildings = [];
 let START_POS = [10, 8.25, 10];
 let GOAL_POS = [85, 16.25, 40];
 let BASE_TOTAL_DIST = 100.0;
-let GEOFENCE = { xmin: 0, xmax: 100, zmin: 0, zmax: 60.0, ymax: 25.0 };
+let GEOFENCE = { xmin: 5.0, xmax: 95.0, zmin: 5.0, zmax: 55.0, ymax: 25.0 };
 let cachedRawGeoJSON = null;
 
+// 精巧型停機坪
 function createHelipad(x, y, z, colorHex) {
     const padGroup = new THREE.Group();
     const pad = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.2, 1.2, 0.08, 16),
+        new THREE.CylinderGeometry(0.8, 0.8, 0.06, 16),
         new THREE.MeshBasicMaterial({ color: colorHex })
     );
-    pad.position.set(x, y + 0.04, z);
+    pad.position.set(x, y + 0.03, z);
     padGroup.add(pad);
 
     const ring = new THREE.Mesh(
-        new THREE.RingGeometry(1.35, 1.55, 24),
+        new THREE.RingGeometry(0.9, 1.05, 20),
         new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, y + 0.05, z);
+    ring.position.set(x, y + 0.04, z);
     padGroup.add(ring);
 
     cityGroup.add(padGroup);
@@ -556,11 +470,6 @@ async function loadRealCityBuildings(seedValue) {
     const MAP_WIDTH = 100.0;
     const MAP_DEPTH = MAP_WIDTH / aspectRatio;
 
-    console.log("========== 全新資料自動對齊基準 ==========");
-    console.log(`經度 (西至東): ${minLon} ~ ${maxLon}`);
-    console.log(`緯度 (南至北): ${minLat} ~ ${maxLat}`);
-    console.log(`長寬比: ${aspectRatio.toFixed(4)} : 1 (寬 ${MAP_WIDTH}m, 深 ${MAP_DEPTH.toFixed(2)}m)`);
-
     features.forEach((f, idx) => {
         if (!f.geometry || !f.geometry.coordinates) return;
         const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : 
@@ -614,35 +523,32 @@ async function loadRealCityBuildings(seedValue) {
         });
     });
 
+    // ★ 電子圍欄向內緊縮 5.0 公尺 (防止繞邊緣偷吃步)
+    const INSET = 5.0;
     GEOFENCE = {
-        xmin: -1.0,
-        xmax: MAP_WIDTH + 1.0,
-        zmin: -1.0,
-        zmax: MAP_DEPTH + 1.0,
+        xmin: INSET,
+        xmax: MAP_WIDTH - INSET,
+        zmin: INSET,
+        zmax: MAP_DEPTH - INSET,
         ymax: 25.0
     };
 
     updateFenceVisual(GEOFENCE);
     updateGroundMap(MAP_WIDTH, MAP_DEPTH);
 
-    let candidateBuildings = buildings.filter(b => b.width >= 3.0 && b.depth >= 3.0);
-    if (candidateBuildings.length < 2) candidateBuildings = buildings;
+    // ★ 挑選起訖大樓：僅在合法圍欄範圍內挑選「兩棟不同的大樓」，不限跨距與面積
+    const innerBuildings = buildings.filter(b => 
+        b.cx >= GEOFENCE.xmin + 1.0 && b.cx <= GEOFENCE.xmax - 1.0 &&
+        b.cz >= GEOFENCE.zmin + 1.0 && b.cz <= GEOFENCE.zmax - 1.0
+    );
+    const pool = innerBuildings.length >= 2 ? innerBuildings : buildings;
 
-    let idxA = Math.floor(rng() * candidateBuildings.length);
-    let idxB = Math.floor(rng() * candidateBuildings.length);
+    const idxA = Math.floor(rng() * pool.length);
+    let idxB = Math.floor(rng() * (pool.length - 1));
+    if (idxB >= idxA) idxB = idxB + 1; // 數學上嚴格確保 idxA !== idxB
 
-    let attempts = 0;
-    while (attempts < 60) {
-        const bA = candidateBuildings[idxA];
-        const bB = candidateBuildings[idxB];
-        const d = Math.hypot(bA.cx - bB.cx, bA.cz - bB.cz);
-        if (idxA !== idxB && d > (MAP_DEPTH * 0.6)) break;
-        idxB = Math.floor(rng() * candidateBuildings.length);
-        attempts++;
-    }
-
-    const startB = candidateBuildings[idxA];
-    const goalB = candidateBuildings[idxB];
+    const startB = pool[idxA];
+    const goalB = pool[idxB];
 
     START_POS = [startB.cx, startB.height + DRONE_RADIUS + 0.05, startB.cz];
     createHelipad(startB.cx, startB.height, startB.cz, 0x00ff88);
@@ -655,6 +561,9 @@ async function loadRealCityBuildings(seedValue) {
     controls.target.set(MAP_WIDTH / 2, 0, MAP_DEPTH / 2);
     camera.position.set(MAP_WIDTH / 2, 110, MAP_DEPTH / 2 + 70);
     controls.update();
+
+    const formattedSeed = String(seedValue).padStart(4, '0');
+    console.log(`種子 [${formattedSeed}] 起訖就緒：起點 (${START_POS.map(v => v.toFixed(1))}) -> 終點 (${GOAL_POS.map(v => v.toFixed(1))})，跨距: ${BASE_TOTAL_DIST.toFixed(1)}m`);
 }
 
 // ------------------ 物理碰撞檢測 ------------------
@@ -680,8 +589,8 @@ function checkSphereCollision(pos) {
 
         const distSq = (x - cx)**2 + (y - cy)**2 + (z - cz)**2;
         if (distSq <= (r * 0.95)**2) {
-            const isAtStartPad = Math.hypot(x - START_POS[0], z - START_POS[2]) < 1.3 && Math.abs(y - START_POS[1]) < 0.3;
-            const isAtGoalPad = Math.hypot(x - GOAL_POS[0], z - GOAL_POS[2]) < 1.3 && Math.abs(y - GOAL_POS[1]) < 0.3;
+            const isAtStartPad = Math.hypot(x - START_POS[0], z - START_POS[2]) < 0.9 && Math.abs(y - START_POS[1]) < 0.3;
+            const isAtGoalPad = Math.hypot(x - GOAL_POS[0], z - GOAL_POS[2]) < 0.9 && Math.abs(y - GOAL_POS[1]) < 0.3;
             if (isAtStartPad || isAtGoalPad) continue;
 
             if (b.mesh && b.mesh.material) {
@@ -698,7 +607,7 @@ function checkSphereCollision(pos) {
     return { hit: false };
 }
 
-function checkContinuousPath(p1, p2, step = 0.03) {
+function checkContinuousPath(p1, p2, step = 0.02) {
     const dx = p2[0] - p1[0], dy = p2[1] - p1[1], dz = p2[2] - p1[2];
     const dist = Math.hypot(dx, dy, dz);
     if (dist === 0) return checkSphereCollision(p1);
@@ -725,8 +634,8 @@ function raycastSafe(origin, direction, maxDist = 15.0) {
     if (dLen === 0) return maxDist;
     const nx = direction[0] / dLen, ny = direction[1] / dLen, nz = direction[2] / dLen;
 
-    let d = 0.15;
-    const step = 0.2;
+    let d = 0.1;
+    const step = 0.15;
     while (d < maxDist) {
         d += step;
         const p = [origin[0] + nx * d, origin[1] + ny * d, origin[2] + nz * d];
@@ -777,9 +686,12 @@ async function resetScene() {
     clearTrail();
 
     const seedInput = document.getElementById('seed-input');
-    const currentSeed = seedInput ? parseInt(seedInput.value, 10) || 5655 : 5655;
+    let seedVal = seedInput ? parseInt(seedInput.value, 10) : 5655;
+    if (isNaN(seedVal)) seedVal = 5655;
+    seedVal = Math.max(0, Math.min(9999, seedVal));
+    if (seedInput) seedInput.value = String(seedVal).padStart(4, '0');
 
-    await loadRealCityBuildings(currentSeed);
+    await loadRealCityBuildings(seedVal);
 
     droneMesh.position.set(...START_POS);
     activeVelocity = [1.0, 0.0, 1.0];
@@ -809,7 +721,9 @@ const applySeedBtn = document.getElementById('apply-seed-btn');
 
 if (randomSeedBtn) {
     randomSeedBtn.addEventListener('click', () => {
-        if (seedInput) seedInput.value = Math.floor(Math.random() * 9000 + 1000);
+        // ★ 生成 0000 ~ 9999 萬種種子
+        const randSeed = Math.floor(Math.random() * 10000);
+        if (seedInput) seedInput.value = String(randSeed).padStart(4, '0');
         resetScene();
     });
 }
@@ -844,7 +758,7 @@ if (downloadLogBtn) {
     downloadLogBtn.addEventListener('click', () => {
         if (!flightSummary) return;
         let content = `=======================================================================\n`;
-        content += `        無人機黑盒子飛行紀錄 (台北士林真實街區精密校準版)        \n`;
+        content += `        無人機黑盒子飛行紀錄 (台北士林街區緊縮挑戰版)        \n`;
         content += `=======================================================================\n`;
         content += `產出時間             : ${new Date().toLocaleString()}\n`;
         content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
@@ -888,7 +802,7 @@ if (runBtn) {
         flightLogs = [];
         flightEvents = [];
         flightSummary = null;
-        addFlightEvent(0.0, `無人機自大樓樓頂停機坪 (${START_POS.map(v=>v.toFixed(2)).join(', ')}) 起飛。`);
+        addFlightEvent(0.0, `無人機自大樓屋頂停機坪 (${START_POS.map(v=>v.toFixed(2)).join(', ')}) 起飛。`);
 
         let currentPos = [...START_POS];
         droneMesh.position.set(...currentPos);
@@ -960,7 +874,8 @@ if (runBtn) {
                 currentPos[2] - GOAL_POS[2]
             );
 
-            if (distToGoal < 1.6) {
+            // 抵達判準
+            if (distToGoal < 1.0) {
                 clearInterval(simInterval);
                 statusEl.innerText = "🎉 成功降落於目標大樓頂！";
                 statusEl.style.color = "#00ff88";
@@ -996,6 +911,5 @@ function finalizeFlight(finalPos, duration, statusText) {
     if (logBtn) logBtn.disabled = false;
 }
 
-// 啟動校準器監聽與初始化場景
-setupCalibrationControls();
+// 系統初始化
 resetScene();
