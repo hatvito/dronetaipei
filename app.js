@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林萬種種子 & 緊縮空域強化版 (app.js)
+// 無人機都市避障挑戰賽 - 全建物隨機挑選 & 起訖大樓高亮發光版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -150,12 +150,11 @@ scene.add(dirLight);
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 🗺️ 底圖精密校準參數 (已鎖定最佳值) ------------------
+// ------------------ 🗺️ 底圖精密校準參數 (永久固定最佳值) ------------------
 let groundPlaneMesh = null;
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
-// ★ 已校準鎖定之最佳數值
 let calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 try {
     const saved = localStorage.getItem('shilin_map_calibration');
@@ -258,8 +257,8 @@ function updateFenceVisual(bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 無人機縮小 (直徑 24cm) ------------------
-const DRONE_RADIUS = 0.12; // 縮小為 0.12m
+// ------------------ 無人機 (輕量穿越機尺寸) ------------------
+const DRONE_RADIUS = 0.12;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0x00ffff })
@@ -376,7 +375,7 @@ animate();
 // ------------------ 0000~9999 萬種種子高離散 PRNG ------------------
 function createSeededRandom(seedInt) {
     let s = Math.abs(seedInt) % 10000;
-    // 32-bit Murmur3 變體雜湊，保證 0~9999 的微小變動能產生完全不同分布
+    // 32-bit Murmur3 變體雜湊
     s = ((s ^ 0x6D2B79F5) * 0x85EBCA6B) >>> 0;
     s = ((s ^ (s >>> 13)) * 0xC2B2AE35) >>> 0;
     let state = (s ^ (s >>> 16)) >>> 0;
@@ -389,7 +388,7 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// ------------------ 建築群載入與緊縮圍籬 ------------------
+// ------------------ 建築群載入、全隨機挑選與顏色渲染 ------------------
 let buildings = [];
 let START_POS = [10, 8.25, 10];
 let GOAL_POS = [85, 16.25, 40];
@@ -397,18 +396,18 @@ let BASE_TOTAL_DIST = 100.0;
 let GEOFENCE = { xmin: 5.0, xmax: 95.0, zmin: 5.0, zmax: 55.0, ymax: 25.0 };
 let cachedRawGeoJSON = null;
 
-// 精巧型停機坪
+// 精巧型頂樓停機坪
 function createHelipad(x, y, z, colorHex) {
     const padGroup = new THREE.Group();
     const pad = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.8, 0.8, 0.06, 16),
+        new THREE.CylinderGeometry(0.75, 0.75, 0.06, 16),
         new THREE.MeshBasicMaterial({ color: colorHex })
     );
     pad.position.set(x, y + 0.03, z);
     padGroup.add(pad);
 
     const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.9, 1.05, 20),
+        new THREE.RingGeometry(0.85, 1.0, 20),
         new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2;
@@ -470,6 +469,8 @@ async function loadRealCityBuildings(seedValue) {
     const MAP_WIDTH = 100.0;
     const MAP_DEPTH = MAP_WIDTH / aspectRatio;
 
+    // 先解析所有建築物的坐標幾何
+    const tempBuildingData = [];
     features.forEach((f, idx) => {
         if (!f.geometry || !f.geometry.coordinates) return;
         const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : 
@@ -496,26 +497,10 @@ async function loadRealCityBuildings(seedValue) {
         let rawH = parseFloat(f.properties?.height || (f.properties?.['building:levels'] ? f.properties['building:levels'] * 3.2 : null));
         let bh = rawH ? Math.min(23.0, Math.max(5.5, rawH * 0.45)) : (7.0 + ((idx * 7) % 14));
 
-        const extrudeSettings = { depth: bh, bevelEnabled: false };
-        const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        geom.rotateX(Math.PI / 2);
-
-        const mat = new THREE.MeshLambertMaterial({ color: 0x242833 });
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.position.y = bh;
-        cityGroup.add(mesh);
-
-        const edges = new THREE.LineSegments(
-            new THREE.EdgesGeometry(geom),
-            new THREE.LineBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.5 })
-        );
-        mesh.add(edges);
-
-        buildings.push({
-            xmin: bMinX, xmax: bMaxX,
-            zmin: bMinZ, zmax: bMaxZ,
-            height: bh,
-            mesh: mesh,
+        tempBuildingData.push({
+            shape,
+            bh,
+            bMinX, bMaxX, bMinZ, bMaxZ,
             cx: (bMinX + bMaxX) / 2,
             cz: (bMinZ + bMaxZ) / 2,
             width: bMaxX - bMinX,
@@ -523,7 +508,7 @@ async function loadRealCityBuildings(seedValue) {
         });
     });
 
-    // ★ 電子圍欄向內緊縮 5.0 公尺 (防止繞邊緣偷吃步)
+    // 電子圍欄向內緊縮 5.0 公尺
     const INSET = 5.0;
     GEOFENCE = {
         xmin: INSET,
@@ -536,19 +521,75 @@ async function loadRealCityBuildings(seedValue) {
     updateFenceVisual(GEOFENCE);
     updateGroundMap(MAP_WIDTH, MAP_DEPTH);
 
-    // ★ 挑選起訖大樓：僅在合法圍欄範圍內挑選「兩棟不同的大樓」，不限跨距與面積
-    const innerBuildings = buildings.filter(b => 
-        b.cx >= GEOFENCE.xmin + 1.0 && b.cx <= GEOFENCE.xmax - 1.0 &&
-        b.cz >= GEOFENCE.zmin + 1.0 && b.cz <= GEOFENCE.zmax - 1.0
-    );
-    const pool = innerBuildings.length >= 2 ? innerBuildings : buildings;
+    // ★ 核心：完全不看面積、大小與跨距！只要在圍欄內，全地圖所有建築都是平等的候選者！
+    let validIndices = [];
+    tempBuildingData.forEach((b, index) => {
+        if (b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
+            b.cz >= GEOFENCE.zmin + 0.5 && b.cz <= GEOFENCE.zmax - 0.5) {
+            validIndices.push(index);
+        }
+    });
 
-    const idxA = Math.floor(rng() * pool.length);
-    let idxB = Math.floor(rng() * (pool.length - 1));
-    if (idxB >= idxA) idxB = idxB + 1; // 數學上嚴格確保 idxA !== idxB
+    if (validIndices.length < 2) {
+        validIndices = tempBuildingData.map((_, i) => i);
+    }
 
-    const startB = pool[idxA];
-    const goalB = pool[idxB];
+    // 隨機種子選取兩棟不同的建築物
+    const pickA = Math.floor(rng() * validIndices.length);
+    let pickB = Math.floor(rng() * (validIndices.length - 1));
+    if (pickB >= pickA) pickB += 1;
+
+    const startIdx = validIndices[pickA];
+    const goalIdx = validIndices[pickB];
+
+    // 生成並上色所有建築物
+    tempBuildingData.forEach((bData, idx) => {
+        const extrudeSettings = { depth: bData.bh, bevelEnabled: false };
+        const geom = new THREE.ExtrudeGeometry(bData.shape, extrudeSettings);
+        geom.rotateX(Math.PI / 2);
+
+        // ★ 判定是否為起點或終點大樓
+        const isStart = (idx === startIdx);
+        const isGoal = (idx === goalIdx);
+
+        let buildingColor = 0x242833; // 一般建築：深科技灰藍
+        let edgeColor = 0x00d2ff;     // 一般線框：冷光藍
+
+        if (isStart) {
+            buildingColor = 0x00ff88; // ★ 起點大樓整棟變綠！
+            edgeColor = 0xffffff;     // 高亮白邊
+        } else if (isGoal) {
+            buildingColor = 0xffd700; // ★ 終點大樓整棟變黃！
+            edgeColor = 0xffffff;     // 高亮白邊
+        }
+
+        const mat = new THREE.MeshLambertMaterial({ color: buildingColor });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.y = bData.bh;
+        cityGroup.add(mesh);
+
+        const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(geom),
+            new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: isStart || isGoal ? 0.9 : 0.45 })
+        );
+        mesh.add(edges);
+
+        buildings.push({
+            xmin: bData.bMinX, xmax: bData.bMaxX,
+            zmin: bData.bMinZ, zmax: bData.bMaxZ,
+            height: bData.bh,
+            mesh: mesh,
+            cx: bData.cx,
+            cz: bData.cz,
+            width: bData.width,
+            depth: bData.depth,
+            isStart: isStart,
+            isGoal: isGoal
+        });
+    });
+
+    const startB = buildings[startIdx];
+    const goalB = buildings[goalIdx];
 
     START_POS = [startB.cx, startB.height + DRONE_RADIUS + 0.05, startB.cz];
     createHelipad(startB.cx, startB.height, startB.cz, 0x00ff88);
@@ -563,7 +604,9 @@ async function loadRealCityBuildings(seedValue) {
     controls.update();
 
     const formattedSeed = String(seedValue).padStart(4, '0');
-    console.log(`種子 [${formattedSeed}] 起訖就緒：起點 (${START_POS.map(v => v.toFixed(1))}) -> 終點 (${GOAL_POS.map(v => v.toFixed(1))})，跨距: ${BASE_TOTAL_DIST.toFixed(1)}m`);
+    console.log(`種子 [${formattedSeed}] 部署完畢！`);
+    console.log(`- 起點大樓 (整棟綠色): (${START_POS.map(v => v.toFixed(1))}), 高度 ${startB.height.toFixed(1)}m`);
+    console.log(`- 終點大樓 (整棟黃色): (${GOAL_POS.map(v => v.toFixed(1))}), 高度 ${goalB.height.toFixed(1)}m`);
 }
 
 // ------------------ 物理碰撞檢測 ------------------
@@ -589,11 +632,12 @@ function checkSphereCollision(pos) {
 
         const distSq = (x - cx)**2 + (y - cy)**2 + (z - cz)**2;
         if (distSq <= (r * 0.95)**2) {
+            // 起訖點停機坪豁免
             const isAtStartPad = Math.hypot(x - START_POS[0], z - START_POS[2]) < 0.9 && Math.abs(y - START_POS[1]) < 0.3;
             const isAtGoalPad = Math.hypot(x - GOAL_POS[0], z - GOAL_POS[2]) < 0.9 && Math.abs(y - GOAL_POS[1]) < 0.3;
             if (isAtStartPad || isAtGoalPad) continue;
 
-            if (b.mesh && b.mesh.material) {
+            if (b.mesh && b.mesh.material && !b.isStart && !b.isGoal) {
                 b.mesh.material.color.setHex(0xff0044);
             }
             return { 
@@ -721,7 +765,6 @@ const applySeedBtn = document.getElementById('apply-seed-btn');
 
 if (randomSeedBtn) {
     randomSeedBtn.addEventListener('click', () => {
-        // ★ 生成 0000 ~ 9999 萬種種子
         const randSeed = Math.floor(Math.random() * 10000);
         if (seedInput) seedInput.value = String(randSeed).padStart(4, '0');
         resetScene();
@@ -758,7 +801,7 @@ if (downloadLogBtn) {
     downloadLogBtn.addEventListener('click', () => {
         if (!flightSummary) return;
         let content = `=======================================================================\n`;
-        content += `        無人機黑盒子飛行紀錄 (台北士林街區緊縮挑戰版)        \n`;
+        content += `        無人機黑盒子飛行紀錄 (台北士林街區高亮起訖版)        \n`;
         content += `=======================================================================\n`;
         content += `產出時間             : ${new Date().toLocaleString()}\n`;
         content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
@@ -802,7 +845,7 @@ if (runBtn) {
         flightLogs = [];
         flightEvents = [];
         flightSummary = null;
-        addFlightEvent(0.0, `無人機自大樓屋頂停機坪 (${START_POS.map(v=>v.toFixed(2)).join(', ')}) 起飛。`);
+        addFlightEvent(0.0, `無人機自綠色大樓屋頂 (${START_POS.map(v=>v.toFixed(2)).join(', ')}) 起飛。`);
 
         let currentPos = [...START_POS];
         droneMesh.position.set(...currentPos);
@@ -875,9 +918,9 @@ if (runBtn) {
             );
 
             // 抵達判準
-            if (distToGoal < 1.0) {
+            if (distToGoal < 0.9) {
                 clearInterval(simInterval);
-                statusEl.innerText = "🎉 成功降落於目標大樓頂！";
+                statusEl.innerText = "🎉 成功降落於金色目標大樓！";
                 statusEl.style.color = "#00ff88";
                 updateScoreboard(GOAL_POS, "成功抵達 (完賽)");
                 finalizeFlight(GOAL_POS, timer, "成功抵達 (完賽)");
