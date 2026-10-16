@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林自動真實比例 1:1 精密對齊版 (app.js)
+// 無人機都市避障挑戰賽 - 台北士林可視化即時校準精密版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -147,41 +147,40 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.65);
 dirLight.position.set(50, 120, 30);
 scene.add(dirLight);
 
-// 都市與物件群組
+// 都市群組
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 可視化校準底圖系統 ------------------
+// ------------------ 🗺️ 可視化校準底圖系統 ------------------
 let groundPlaneMesh = null;
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
-// 預設或讀取儲存的校準值
+// 預設或載入上次校準參數
 let calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
 try {
     const saved = localStorage.getItem('shilin_map_calibration');
     if (saved) calibData = JSON.parse(saved);
 } catch (e) {}
 
+// ★ 核心方法：直接透過 Three.js 物件 Transform 實現 100% 畫面有感即時移動
 function applyGroundTransform() {
     if (!groundPlaneMesh) return;
-    const finalW = currentBaseW * calibData.scale;
-    const finalD = currentBaseD * calibData.scale;
 
-    // 即時重設平面幾何大小
-    groundPlaneMesh.geometry.dispose();
-    groundPlaneMesh.geometry = new THREE.PlaneGeometry(finalW, finalD);
+    // 1. 即時調整網格大小
+    groundPlaneMesh.scale.set(calibData.scale, calibData.scale, 1.0);
 
-    // 即時更新中心位置
+    // 2. 即時平移位置 (X: 東西向, Z: 南北向)
     const cx = (currentBaseW / 2) + calibData.offsetX;
     const cz = (currentBaseD / 2) + calibData.offsetZ;
     groundPlaneMesh.position.set(cx, -0.01, cz);
 
-    // 更新介面數值
+    // 3. 更新面板顯示數值
     const elScale = document.getElementById('val-scale');
     const elX = document.getElementById('val-x');
     const elZ = document.getElementById('val-z');
     const inputScale = document.getElementById('input-scale');
+
     if (elScale) elScale.innerText = Number(calibData.scale).toFixed(3);
     if (elX) elX.innerText = Number(calibData.offsetX).toFixed(2);
     if (elZ) elZ.innerText = Number(calibData.offsetZ).toFixed(2);
@@ -211,7 +210,7 @@ function updateGroundMap(mapWidth, mapDepth) {
             tex.wrapS = THREE.ClampToEdgeWrapping;
             tex.wrapT = THREE.ClampToEdgeWrapping;
 
-            const planeGeo = new THREE.PlaneGeometry(mapWidth * calibData.scale, mapDepth * calibData.scale);
+            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
             const planeMat = new THREE.MeshBasicMaterial({
                 map: tex,
                 side: THREE.FrontSide,
@@ -223,11 +222,10 @@ function updateGroundMap(mapWidth, mapDepth) {
             scene.add(groundPlaneMesh);
 
             applyGroundTransform();
-            console.log("底圖載入完成，已套用校準數值！");
+            console.log("底圖 map_shilin.png 已載入，套用目前校準！");
         },
         undefined,
         () => {
-            console.warn("未找到 map_shilin.png，顯示科技網格。");
             const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
             const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
@@ -238,72 +236,7 @@ function updateGroundMap(mapWidth, mapDepth) {
     );
 }
 
-// ------------------ 綁定即時校準器控制項 (拉桿、方向鍵、儲存) ------------------
-function setupCalibrationControls() {
-    const inputScale = document.getElementById('input-scale');
-    const btnSave = document.getElementById('btn-save-calib');
-    const btnReset = document.getElementById('btn-reset-calib');
-    const calibHint = document.getElementById('calib-hint');
-
-    // 1. 拖動滑桿放大縮小
-    if (inputScale) {
-        inputScale.value = calibData.scale;
-        inputScale.addEventListener('input', (e) => {
-            calibData.scale = parseFloat(e.target.value);
-            applyGroundTransform();
-        });
-    }
-
-    // 2. 鍵盤方向鍵上下左右移動
-    window.addEventListener('keydown', (e) => {
-        // 如果正在輸入程式碼框，不要觸發地圖移動
-        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-
-        const step = e.shiftKey ? 1.0 : 0.15; // Shift 加速移動
-        let changed = false;
-
-        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
-        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
-        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
-        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
-
-        if (changed) {
-            e.preventDefault();
-            applyGroundTransform();
-        }
-    });
-
-    // 3. 按下按鈕儲存至 LocalStorage 並自動複製成 JS 代碼
-    if (btnSave) {
-        btnSave.addEventListener('click', () => {
-            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
-
-            const exportSnippet = `// 士林底圖校準參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
-            navigator.clipboard.writeText(exportSnippet).then(() => {
-                if (calibHint) {
-                    calibHint.innerText = `✅ 已儲存！(Scale: ${calibData.scale.toFixed(3)}, X: ${calibData.offsetX.toFixed(2)}, Z: ${calibData.offsetZ.toFixed(2)})`;
-                    calibHint.style.display = 'block';
-                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
-                }
-            });
-        });
-    }
-
-    // 4. 重設為 0
-    if (btnReset) {
-        btnReset.addEventListener('click', () => {
-            calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
-            localStorage.removeItem('shilin_map_calibration');
-            applyGroundTransform();
-        });
-    }
-
-    applyGroundTransform();
-}
-
-// 初始化校準面板
-setupCalibrationControls();
-// 電子圍欄可視化線框
+// ------------------ 電子圍欄可視化 ------------------
 let fenceLineSegments = null;
 function updateFenceVisual(bounds) {
     if (fenceLineSegments) scene.remove(fenceLineSegments);
@@ -326,7 +259,7 @@ function updateFenceVisual(bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 無人機與標記 ------------------
+// ------------------ 無人機與軌跡 ------------------
 const DRONE_RADIUS = 0.25;
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
@@ -550,7 +483,7 @@ async function loadRealCityBuildings(seedValue) {
         let bMinZ = Infinity, bMaxZ = -Infinity;
 
         coords.forEach(([lon, lat], i) => {
-            // 上北下南、線性無損對齊
+            // 上北下南對齊
             const x = ((lon - minLon) / (maxLon - minLon)) * MAP_WIDTH;
             const z = ((maxLat - lat) / (maxLat - minLat)) * MAP_DEPTH;
 
@@ -633,12 +566,86 @@ async function loadRealCityBuildings(seedValue) {
 
     BASE_TOTAL_DIST = Math.hypot(GOAL_POS[0] - START_POS[0], GOAL_POS[1] - START_POS[1], GOAL_POS[2] - START_POS[2]);
 
-    // 視角對齊地圖中心
     controls.target.set(MAP_WIDTH / 2, 0, MAP_DEPTH / 2);
     camera.position.set(MAP_WIDTH / 2, 110, MAP_DEPTH / 2 + 70);
     controls.update();
+}
 
-    console.log(`種子 ${seedValue} 配置完成：起點 (${START_POS.map(v=>v.toFixed(1))})，終點 (${GOAL_POS.map(v=>v.toFixed(1))})，直線距離 ${BASE_TOTAL_DIST.toFixed(1)}m`);
+// ------------------ 綁定控制項：實體按鈕、拉桿、鍵盤 ------------------
+function setupCalibrationControls() {
+    const inputScale = document.getElementById('input-scale');
+    const btnUp = document.getElementById('btn-move-up');
+    const btnDown = document.getElementById('btn-move-down');
+    const btnLeft = document.getElementById('btn-move-left');
+    const btnRight = document.getElementById('btn-move-right');
+    const btnSave = document.getElementById('btn-save-calib');
+    const btnReset = document.getElementById('btn-reset-calib');
+    const calibHint = document.getElementById('calib-hint');
+
+    // 1. 拉桿縮放
+    if (inputScale) {
+        inputScale.value = calibData.scale;
+        inputScale.addEventListener('input', (e) => {
+            calibData.scale = parseFloat(e.target.value);
+            applyGroundTransform();
+        });
+    }
+
+    // 移動公用方法 (每次移動 0.5 米)
+    function moveMap(dx, dz) {
+        calibData.offsetX += dx;
+        calibData.offsetZ += dz;
+        applyGroundTransform();
+    }
+
+    // 2. 實體按鈕點擊移動
+    if (btnUp) btnUp.addEventListener('click', () => moveMap(0, -0.6));
+    if (btnDown) btnDown.addEventListener('click', () => moveMap(0, 0.6));
+    if (btnLeft) btnLeft.addEventListener('click', () => moveMap(-0.6, 0));
+    if (btnRight) btnRight.addEventListener('click', () => moveMap(0.6, 0));
+
+    // 3. 鍵盤監聽
+    window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+        const step = e.shiftKey ? 1.5 : 0.3;
+        let changed = false;
+
+        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
+        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
+        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
+        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
+
+        if (changed) {
+            e.preventDefault();
+            applyGroundTransform();
+        }
+    });
+
+    // 4. 儲存至 LocalStorage 並複製代碼
+    if (btnSave) {
+        btnSave.addEventListener('click', () => {
+            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
+            const exportSnippet = `// 士林底圖最佳對齊參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
+            navigator.clipboard.writeText(exportSnippet).then(() => {
+                if (calibHint) {
+                    calibHint.innerText = `✅ 已儲存！(Scale:${calibData.scale.toFixed(3)}, X:${calibData.offsetX.toFixed(2)}, Z:${calibData.offsetZ.toFixed(2)})`;
+                    calibHint.style.display = 'block';
+                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
+                }
+            });
+        });
+    }
+
+    // 5. 重設
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
+            localStorage.removeItem('shilin_map_calibration');
+            applyGroundTransform();
+        });
+    }
+
+    applyGroundTransform();
 }
 
 // ------------------ 物理碰撞與連續路徑細分檢測 ------------------
@@ -804,10 +811,12 @@ if (applySeedBtn) {
 
 const modal = document.getElementById('prompt-modal');
 const openPromptBtn = document.getElementById('open-prompt-modal-btn');
+const quickPromptBtn = document.getElementById('quick-prompt-btn');
 const closeModalBtn = document.getElementById('close-modal-btn');
 const copyPromptBtn = document.getElementById('copy-prompt-btn');
 
 if (openPromptBtn) openPromptBtn.addEventListener('click', () => modal.style.display = 'flex');
+if (quickPromptBtn) quickPromptBtn.addEventListener('click', () => modal.style.display = 'flex');
 if (closeModalBtn) closeModalBtn.addEventListener('click', () => modal.style.display = 'none');
 if (copyPromptBtn) {
     copyPromptBtn.addEventListener('click', () => {
@@ -826,7 +835,7 @@ if (downloadLogBtn) {
     downloadLogBtn.addEventListener('click', () => {
         if (!flightSummary) return;
         let content = `=======================================================================\n`;
-        content += `        無人機黑盒子飛行紀錄 (台北士林真實街區自適應版)        \n`;
+        content += `        無人機黑盒子飛行紀錄 (台北士林真實街區精密校準版)        \n`;
         content += `=======================================================================\n`;
         content += `產出時間             : ${new Date().toLocaleString()}\n`;
         content += `任務總飛行時間       : ${flightSummary.duration} 秒\n`;
@@ -978,5 +987,6 @@ function finalizeFlight(finalPos, duration, statusText) {
     if (logBtn) logBtn.disabled = false;
 }
 
-// 系統初始化就緒載入
+// 初始化面板事件與場景載入
+setupCalibrationControls();
 resetScene();
