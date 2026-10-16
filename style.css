@@ -4,347 +4,329 @@
     padding: 0;
 }
 
-body {
-    display: flex;
-    height: 100vh;
-    width: 100vw;
-    background-color: #0c0d10;
-    color: #e0e0e0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+body, html {
+    width: 100%;
+    height: 100%;
     overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #0a0c10;
+    color: #e0e6ed;
 }
 
-/* 左側操作面板 */
+#app-container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* 左側控制側邊欄 */
 #sidebar {
-    width: 440px;
+    width: 380px;
     min-width: 380px;
-    background-color: #1e1e24;
-    border-right: 1px solid #2d2d38;
+    height: 100%;
+    background-color: #12161f;
+    border-right: 1px solid #1e2638;
     display: flex;
     flex-direction: column;
     padding: 16px;
-    gap: 10px;
-    z-index: 10;
+    gap: 12px;
     overflow-y: auto;
+    z-index: 10;
 }
 
-.header h1 {
-    font-size: 1.15rem;
+.sidebar-header h2 {
+    font-size: 18px;
     color: #00d2ff;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
 }
 
-.header p {
-    font-size: 0.78rem;
-    color: #8c8c9e;
+.sidebar-header .subtitle {
+    font-size: 11px;
+    color: #8899a6;
 }
 
-.input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.control-group label {
+    font-size: 12px;
+    color: #aaa;
+    display: block;
+    margin-bottom: 4px;
 }
 
-.input-group label {
-    font-size: 0.82rem;
-    font-weight: bold;
-    color: #b0b0c0;
-    display: flex;
-    justify-content: space-between;
-}
-
-.seed-row {
+.seed-input-row {
     display: flex;
     gap: 6px;
 }
 
-input[type="number"] {
-    flex: 1;
-    background-color: #2b2b36;
-    border: 1px solid #3d3d4d;
+.seed-input-row input {
+    width: 80px;
+    background: #1a202c;
+    border: 1px solid #2d3748;
     color: #fff;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    outline: none;
-}
-
-input[type="number"]:focus {
-    border-color: #00d2ff;
-}
-
-.btn-secondary {
-    background-color: #2b2b36;
-    border: 1px solid #3d3d4d;
-    color: #ddd;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-    white-space: nowrap;
-}
-
-.btn-secondary:hover:not(:disabled) {
-    background-color: #3d3d4d;
-    color: #fff;
-}
-
-.btn-secondary:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-/* 黑盒子下載專用按鈕樣式 */
-#download-log-btn {
-    margin-top: 6px;
-    width: 100%;
-    background-color: #1d334a;
-    color: #79c0ff;
-    border-color: #2b4c6f;
-    font-weight: bold;
-    padding: 8px 10px;
-}
-
-#download-log-btn:hover:not(:disabled) {
-    background-color: #264666;
-    color: #ffffff;
-}
-
-/* AI 提示詞按鈕卡片 */
-.ai-banner {
-    background: linear-gradient(135deg, rgba(0, 210, 255, 0.1), rgba(147, 51, 234, 0.1));
-    border: 1px solid rgba(0, 210, 255, 0.3);
-    border-radius: 6px;
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.ai-banner span {
-    font-size: 0.8rem;
-    color: #a8d5ff;
-}
-
-.ai-banner button {
-    background-color: #00d2ff;
-    color: #121214;
-    font-weight: bold;
-    border: none;
-    padding: 4px 10px;
+    padding: 6px 8px;
     border-radius: 4px;
-    font-size: 0.78rem;
+    font-size: 13px;
+}
+
+.seed-input-row button {
+    background: #2d3748;
+    color: #cbd5e0;
+    border: 1px solid #4a5568;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.seed-input-row button:hover {
+    background: #4a5568;
+    color: #fff;
+}
+
+.ai-prompt-box {
+    display: flex;
+    gap: 6px;
+}
+
+.ai-prompt-box button {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid #00d2ff;
+    color: #00d2ff;
+    padding: 6px;
+    border-radius: 4px;
+    font-size: 12px;
     cursor: pointer;
 }
 
-.ai-banner button:hover {
-    background-color: #5ce1e6;
+.ai-prompt-box button:hover {
+    background: #00d2ff;
+    color: #000;
 }
 
-/* 程式碼編輯區 */
-#code-area {
-    flex: 1;
+.code-editor-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-height: 200px;
+    flex: 1;
+    min-height: 220px;
 }
 
-textarea {
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #8899a6;
+    margin-bottom: 4px;
+}
+
+#controller-code {
     flex: 1;
-    background-color: #16161a;
-    border: 1px solid #3d3d4d;
-    color: #79c0ff;
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
+    width: 100%;
+    min-height: 200px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: #58a6ff;
+    font-family: "Fira Code", Consolas, monospace;
+    font-size: 12px;
     padding: 10px;
     border-radius: 6px;
     resize: none;
-    outline: none;
-    white-space: pre;
-    tab-size: 4;
+    line-height: 1.4;
 }
 
-textarea:focus {
-    border-color: #00d2ff;
-}
-
-/* 執行按鈕與狀態 */
-#run-btn {
-    background-color: #007acc;
+.primary-btn {
+    background: #0088cc;
     color: #fff;
-    font-size: 0.95rem;
-    font-weight: bold;
     border: none;
-    padding: 11px;
+    padding: 10px;
     border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
     cursor: pointer;
     transition: background 0.2s;
 }
 
-#run-btn:hover {
-    background-color: #0098ff;
+.primary-btn:hover {
+    background: #00aaff;
 }
 
-/* 結算戰績看板卡片 */
-#scoreboard {
-    background-color: #16161d;
-    border: 1px solid #38384a;
+/* 評測計分板 */
+#scoreboard-panel {
+    background: #161b26;
+    border: 1px solid #222b3d;
     border-radius: 6px;
-    padding: 10px 12px;
+    padding: 10px;
+}
+
+.score-header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #00d2ff;
+    margin-bottom: 8px;
+}
+
+.score-grid {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
+    font-size: 12px;
+    margin-bottom: 8px;
 }
 
-.score-title {
-    font-size: 0.85rem;
-    font-weight: bold;
-    color: #ffd700;
+.score-item {
     display: flex;
     justify-content: space-between;
 }
 
-.score-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    color: #aaa;
+.score-label {
+    color: #8899a6;
 }
 
-.score-val {
-    font-family: monospace;
+.score-value {
+    color: #fff;
     font-weight: bold;
+}
+
+.score-value.highlight {
+    color: #00ff88;
+}
+
+.fdr-btn {
+    width: 100%;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.fdr-btn:not(:disabled):hover {
+    background: #30363d;
     color: #fff;
 }
 
-.score-val.highlight {
-    color: #ff3366;
-}
-
-/* 右側 3D 視圖與 HUD */
-#viewer {
+/* 右側 3D 視圖區域 */
+#viewer-container {
     flex: 1;
+    height: 100%;
     position: relative;
-    background-color: #0c0d10;
     overflow: hidden;
 }
 
-#hud {
-    position: absolute;
-    top: 16px;
-    left: 20px;
-    color: #ffffff;
-    font-family: monospace;
-    font-size: 1.05rem;
-    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
-    pointer-events: none;
-    line-height: 1.6;
-    z-index: 5;
+#viewer {
+    width: 100%;
+    height: 100%;
 }
 
-/* 視角切換器樣式 (鎖定右上角) */
-#camera-modes {
+/* 頂部 HUD (絕對定位在頂部中央) */
+#hud-bar {
     position: absolute;
-    top: 16px;
-    right: 24px;
+    top: 15px;
+    left: 20px;
+    right: 20px;
     display: flex;
-    background: rgba(22, 22, 28, 0.9);
-    border: 1px solid #3d3d4d;
+    align-items: center;
+    gap: 20px;
+    background: rgba(18, 22, 31, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 16px;
     border-radius: 8px;
-    padding: 4px;
+    font-size: 13px;
+    z-index: 50;
+}
+
+.hud-item {
+    display: flex;
     gap: 6px;
-    z-index: 100;
+    align-items: center;
+}
+
+.hud-label {
+    color: #8899a6;
+}
+
+.hud-val {
+    color: #00d2ff;
+    font-weight: bold;
+}
+
+.cam-switch-group {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
 }
 
 .cam-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    color: #9aa0a6;
-    font-size: 0.82rem;
-    padding: 6px 14px;
-    border-radius: 6px;
+    background: #1a202c;
+    border: 1px solid #2d3748;
+    color: #cbd5e0;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
     cursor: pointer;
-    font-weight: bold;
-    transition: all 0.2s;
-    white-space: nowrap;
-}
-
-.cam-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.08);
 }
 
 .cam-btn.active {
-    background-color: #00d2ff;
-    color: #121214;
-    border-color: #00d2ff;
+    background: #00d2ff;
+    color: #000;
+    font-weight: bold;
 }
 
-#controls-hint {
+/* 右下角操作提示 */
+#view-hints {
     position: absolute;
-    bottom: 16px;
+    bottom: 12px;
     right: 20px;
-    color: #777;
-    font-size: 0.78rem;
+    font-size: 11px;
+    color: #556677;
     pointer-events: none;
-    background: rgba(0, 0, 0, 0.5);
-    padding: 6px 12px;
-    border-radius: 4px;
-    z-index: 5;
+    z-index: 20;
 }
 
-/* 彈窗樣式 */
+/* 彈出視窗 */
 .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.7);
-    display: none;
-    align-items: center;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.7);
+    display: flex;
     justify-content: center;
-    z-index: 1000;
+    align-items: center;
+    z-index: 9999;
 }
 
 .modal-content {
-    background-color: #1e1e24;
-    border: 1px solid #3d3d4d;
+    background: #161b22;
+    border: 1px solid #30363d;
     border-radius: 8px;
     width: 600px;
-    max-width: 90vw;
-    max-height: 85vh;
+    max-width: 90%;
     padding: 20px;
+    color: #c9d1d9;
+}
+
+.modal-header {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
 }
 
-.modal-content h2 {
-    font-size: 1.1rem;
-    color: #00d2ff;
+.close-btn {
+    font-size: 20px;
+    cursor: pointer;
 }
 
-.modal-body {
-    flex: 1;
-    background: #16161a;
-    border: 1px solid #2d2d38;
-    border-radius: 6px;
+.prompt-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
     padding: 12px;
-    color: #aaa;
-    font-family: monospace;
-    font-size: 0.78rem;
+    border-radius: 6px;
+    font-size: 12px;
     line-height: 1.5;
     white-space: pre-wrap;
+    max-height: 350px;
     overflow-y: auto;
-    max-height: 380px;
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
+    margin: 12px 0;
 }
