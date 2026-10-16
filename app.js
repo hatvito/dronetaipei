@@ -1,5 +1,5 @@
 // =========================================================================
-// 無人機都市避障挑戰賽 - 台北士林可視化即時校準精密版 (app.js)
+// 無人機都市避障挑戰賽 - 台北士林雙軸獨立校準版 (app.js)
 // =========================================================================
 
 // ------------------ 預設避障控制器策略 ------------------
@@ -72,7 +72,6 @@ class StudentController {
                 fx -= rx * rep;
                 fz -= rz * rep;
 
-                // 切向旋轉推力
                 const cross = (dx / distGoalHoriz) * rz - (dz / distGoalHoriz) * rx;
                 const sign = cross >= 0 ? 1 : -1;
                 fx += -rz * sign * ((1.0 - dist / this.sensorRange) * (this.tangentPower / numRays));
@@ -147,45 +146,53 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.65);
 dirLight.position.set(50, 120, 30);
 scene.add(dirLight);
 
-// 都市群組
+// 都市幾何容器
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 🗺️ 可視化校準底圖系統 ------------------
+// ------------------ 🗺️ 支援獨立南北長寬比校準的底圖系統 ------------------
 let groundPlaneMesh = null;
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
-// 預設或載入上次校準參數
-let calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
+// 預設校準參數 (包含 scaleZ 獨立拉伸)
+let calibData = { scale: 1.0, scaleZ: 1.0, offsetX: -1.5, offsetZ: -3.6 };
 try {
     const saved = localStorage.getItem('shilin_map_calibration');
-    if (saved) calibData = JSON.parse(saved);
+    if (saved) calibData = Object.assign(calibData, JSON.parse(saved));
 } catch (e) {}
 
-// ★ 核心方法：直接透過 Three.js 物件 Transform 實現 100% 畫面有感即時移動
+// ★ 核心方法：X (東西) 與 Z (南北) 獨立縮放，解決上下偏離問題
 function applyGroundTransform() {
     if (!groundPlaneMesh) return;
 
-    // 1. 即時調整網格大小
-    groundPlaneMesh.scale.set(calibData.scale, calibData.scale, 1.0);
+    const sx = calibData.scale;
+    const sz = calibData.scale * (calibData.scaleZ !== undefined ? calibData.scaleZ : 1.0);
 
-    // 2. 即時平移位置 (X: 東西向, Z: 南北向)
+    groundPlaneMesh.scale.set(sx, sz, 1.0);
+
     const cx = (currentBaseW / 2) + calibData.offsetX;
     const cz = (currentBaseD / 2) + calibData.offsetZ;
     groundPlaneMesh.position.set(cx, -0.01, cz);
 
-    // 3. 更新面板顯示數值
+    // 更新面板 UI 顯示
     const elScale = document.getElementById('val-scale');
+    const elScaleZ = document.getElementById('val-scale-z');
     const elX = document.getElementById('val-x');
     const elZ = document.getElementById('val-z');
     const inputScale = document.getElementById('input-scale');
+    const inputScaleZ = document.getElementById('input-scale-z');
 
     if (elScale) elScale.innerText = Number(calibData.scale).toFixed(3);
+    if (elScaleZ) elScaleZ.innerText = Number(calibData.scaleZ || 1.0).toFixed(3);
     if (elX) elX.innerText = Number(calibData.offsetX).toFixed(2);
     if (elZ) elZ.innerText = Number(calibData.offsetZ).toFixed(2);
+
     if (inputScale && document.activeElement !== inputScale) {
         inputScale.value = calibData.scale;
+    }
+    if (inputScaleZ && document.activeElement !== inputScaleZ) {
+        inputScaleZ.value = calibData.scaleZ || 1.0;
     }
 }
 
@@ -222,7 +229,7 @@ function updateGroundMap(mapWidth, mapDepth) {
             scene.add(groundPlaneMesh);
 
             applyGroundTransform();
-            console.log("底圖 map_shilin.png 已載入，套用目前校準！");
+            console.log("底圖 map_shilin.png 載入完成，已套用校準！");
         },
         undefined,
         () => {
@@ -234,6 +241,92 @@ function updateGroundMap(mapWidth, mapDepth) {
             applyGroundTransform();
         }
     );
+}
+
+// ------------------ 綁定控制項：實體按鈕、雙滑桿、鍵盤 ------------------
+function setupCalibrationControls() {
+    const inputScale = document.getElementById('input-scale');
+    const inputScaleZ = document.getElementById('input-scale-z');
+    const btnUp = document.getElementById('btn-move-up');
+    const btnDown = document.getElementById('btn-move-down');
+    const btnLeft = document.getElementById('btn-move-left');
+    const btnRight = document.getElementById('btn-move-right');
+    const btnSave = document.getElementById('btn-save-calib');
+    const btnReset = document.getElementById('btn-reset-calib');
+    const calibHint = document.getElementById('calib-hint');
+
+    // 1. 整體縮放滑桿
+    if (inputScale) {
+        inputScale.value = calibData.scale;
+        inputScale.addEventListener('input', (e) => {
+            calibData.scale = parseFloat(e.target.value);
+            applyGroundTransform();
+        });
+    }
+
+    // 2. 南北拉伸/壓縮滑桿
+    if (inputScaleZ) {
+        inputScaleZ.value = calibData.scaleZ || 1.0;
+        inputScaleZ.addEventListener('input', (e) => {
+            calibData.scaleZ = parseFloat(e.target.value);
+            applyGroundTransform();
+        });
+    }
+
+    function moveMap(dx, dz) {
+        calibData.offsetX += dx;
+        calibData.offsetZ += dz;
+        applyGroundTransform();
+    }
+
+    // 3. 實體方向按鈕
+    if (btnUp) btnUp.addEventListener('click', () => moveMap(0, -0.5));
+    if (btnDown) btnDown.addEventListener('click', () => moveMap(0, 0.5));
+    if (btnLeft) btnLeft.addEventListener('click', () => moveMap(-0.5, 0));
+    if (btnRight) btnRight.addEventListener('click', () => moveMap(0.5, 0));
+
+    // 4. 鍵盤監聽
+    window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+        const step = e.shiftKey ? 1.5 : 0.3;
+        let changed = false;
+
+        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
+        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
+        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
+        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
+
+        if (changed) {
+            e.preventDefault();
+            applyGroundTransform();
+        }
+    });
+
+    // 5. 儲存至 LocalStorage 並複製代碼
+    if (btnSave) {
+        btnSave.addEventListener('click', () => {
+            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
+            const exportSnippet = `// 士林底圖最佳對齊參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, scaleZ: ${(calibData.scaleZ || 1.0).toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
+            navigator.clipboard.writeText(exportSnippet).then(() => {
+                if (calibHint) {
+                    calibHint.innerText = `✅ 已儲存！(Scale:${calibData.scale.toFixed(3)}, Z-Scale:${(calibData.scaleZ || 1.0).toFixed(3)}, X:${calibData.offsetX.toFixed(2)}, Z:${calibData.offsetZ.toFixed(2)})`;
+                    calibHint.style.display = 'block';
+                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
+                }
+            });
+        });
+    }
+
+    // 6. 重設
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            calibData = { scale: 1.0, scaleZ: 1.0, offsetX: 0.0, offsetZ: 0.0 };
+            localStorage.removeItem('shilin_map_calibration');
+            applyGroundTransform();
+        });
+    }
+
+    applyGroundTransform();
 }
 
 // ------------------ 電子圍欄可視化 ------------------
@@ -374,7 +467,7 @@ function animate() {
 }
 animate();
 
-// ------------------ 偽隨機種子生成器 (PRNG) ------------------
+// ------------------ 偽隨機種子生成器 ------------------
 function createSeededRandom(seedInt) {
     let s = Math.abs(seedInt) || 1;
     return function() {
@@ -383,7 +476,7 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// ------------------ 真實建築群建構 (自動動態計算經緯度與比例) ------------------
+// ------------------ 建築群載入與動態尺寸計算 ------------------
 let buildings = [];
 let START_POS = [10, 8.25, 10];
 let GOAL_POS = [85, 16.25, 40];
@@ -436,7 +529,6 @@ async function loadRealCityBuildings(seedValue) {
 
     const features = cachedRawGeoJSON.features;
 
-    // 1. 自動偵測全新 GeoJSON 的經緯度極值
     let minLon = Infinity, maxLon = -Infinity;
     let minLat = Infinity, maxLat = -Infinity;
 
@@ -453,9 +545,8 @@ async function loadRealCityBuildings(seedValue) {
         });
     });
 
-    // 2. 自動計算真實物理公尺尺寸與長寬比
     const centerLat = (minLat + maxLat) / 2;
-    const mPerDegLat = 110800; // 台北緯度公尺換算
+    const mPerDegLat = 110800;
     const mPerDegLon = 111320 * Math.cos(centerLat * Math.PI / 180);
 
     const realWidthMeters = (maxLon - minLon) * mPerDegLon;
@@ -466,12 +557,10 @@ async function loadRealCityBuildings(seedValue) {
     const MAP_DEPTH = MAP_WIDTH / aspectRatio;
 
     console.log("========== 全新資料自動對齊基準 ==========");
-    console.log(`經度範圍 (西至東): ${minLon} ~ ${maxLon}`);
-    console.log(`緯度範圍 (南至北): ${minLat} ~ ${maxLat}`);
-    console.log(`真實地貌長寬比 (W : H): ${aspectRatio.toFixed(4)} : 1`);
-    console.log(`3D 物理尺寸: 寬度 ${MAP_WIDTH}m, 南北深度 ${MAP_DEPTH.toFixed(2)}m`);
+    console.log(`經度 (西至東): ${minLon} ~ ${maxLon}`);
+    console.log(`緯度 (南至北): ${minLat} ~ ${maxLat}`);
+    console.log(`長寬比: ${aspectRatio.toFixed(4)} : 1 (寬 ${MAP_WIDTH}m, 深 ${MAP_DEPTH.toFixed(2)}m)`);
 
-    // 3. 建築物幾何 1:1 投影渲染
     features.forEach((f, idx) => {
         if (!f.geometry || !f.geometry.coordinates) return;
         const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : 
@@ -483,7 +572,6 @@ async function loadRealCityBuildings(seedValue) {
         let bMinZ = Infinity, bMaxZ = -Infinity;
 
         coords.forEach(([lon, lat], i) => {
-            // 上北下南對齊
             const x = ((lon - minLon) / (maxLon - minLon)) * MAP_WIDTH;
             const z = ((maxLat - lat) / (maxLat - minLat)) * MAP_DEPTH;
 
@@ -526,7 +614,6 @@ async function loadRealCityBuildings(seedValue) {
         });
     });
 
-    // 4. 同步電子圍欄與底圖
     GEOFENCE = {
         xmin: -1.0,
         xmax: MAP_WIDTH + 1.0,
@@ -538,7 +625,6 @@ async function loadRealCityBuildings(seedValue) {
     updateFenceVisual(GEOFENCE);
     updateGroundMap(MAP_WIDTH, MAP_DEPTH);
 
-    // 5. 隨機種子選取停機坪
     let candidateBuildings = buildings.filter(b => b.width >= 3.0 && b.depth >= 3.0);
     if (candidateBuildings.length < 2) candidateBuildings = buildings;
 
@@ -571,84 +657,7 @@ async function loadRealCityBuildings(seedValue) {
     controls.update();
 }
 
-// ------------------ 綁定控制項：實體按鈕、拉桿、鍵盤 ------------------
-function setupCalibrationControls() {
-    const inputScale = document.getElementById('input-scale');
-    const btnUp = document.getElementById('btn-move-up');
-    const btnDown = document.getElementById('btn-move-down');
-    const btnLeft = document.getElementById('btn-move-left');
-    const btnRight = document.getElementById('btn-move-right');
-    const btnSave = document.getElementById('btn-save-calib');
-    const btnReset = document.getElementById('btn-reset-calib');
-    const calibHint = document.getElementById('calib-hint');
-
-    // 1. 拉桿縮放
-    if (inputScale) {
-        inputScale.value = calibData.scale;
-        inputScale.addEventListener('input', (e) => {
-            calibData.scale = parseFloat(e.target.value);
-            applyGroundTransform();
-        });
-    }
-
-    // 移動公用方法 (每次移動 0.5 米)
-    function moveMap(dx, dz) {
-        calibData.offsetX += dx;
-        calibData.offsetZ += dz;
-        applyGroundTransform();
-    }
-
-    // 2. 實體按鈕點擊移動
-    if (btnUp) btnUp.addEventListener('click', () => moveMap(0, -0.6));
-    if (btnDown) btnDown.addEventListener('click', () => moveMap(0, 0.6));
-    if (btnLeft) btnLeft.addEventListener('click', () => moveMap(-0.6, 0));
-    if (btnRight) btnRight.addEventListener('click', () => moveMap(0.6, 0));
-
-    // 3. 鍵盤監聽
-    window.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-        const step = e.shiftKey ? 1.5 : 0.3;
-        let changed = false;
-
-        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
-        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
-        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
-        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
-
-        if (changed) {
-            e.preventDefault();
-            applyGroundTransform();
-        }
-    });
-
-    // 4. 儲存至 LocalStorage 並複製代碼
-    if (btnSave) {
-        btnSave.addEventListener('click', () => {
-            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
-            const exportSnippet = `// 士林底圖最佳對齊參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
-            navigator.clipboard.writeText(exportSnippet).then(() => {
-                if (calibHint) {
-                    calibHint.innerText = `✅ 已儲存！(Scale:${calibData.scale.toFixed(3)}, X:${calibData.offsetX.toFixed(2)}, Z:${calibData.offsetZ.toFixed(2)})`;
-                    calibHint.style.display = 'block';
-                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
-                }
-            });
-        });
-    }
-
-    // 5. 重設
-    if (btnReset) {
-        btnReset.addEventListener('click', () => {
-            calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
-            localStorage.removeItem('shilin_map_calibration');
-            applyGroundTransform();
-        });
-    }
-
-    applyGroundTransform();
-}
-
-// ------------------ 物理碰撞與連續路徑細分檢測 ------------------
+// ------------------ 物理碰撞檢測 ------------------
 function checkSphereCollision(pos) {
     const [x, y, z] = pos;
     const r = DRONE_RADIUS;
@@ -987,6 +996,6 @@ function finalizeFlight(finalPos, duration, statusText) {
     if (logBtn) logBtn.disabled = false;
 }
 
-// 初始化面板事件與場景載入
+// 啟動校準器監聽與初始化場景
 setupCalibrationControls();
 resetScene();
