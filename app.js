@@ -151,10 +151,49 @@ scene.add(dirLight);
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 動態底圖系統 (加入位置與縮放校正) ------------------
+// ------------------ 可視化校準底圖系統 ------------------
 let groundPlaneMesh = null;
+let currentBaseW = 100.0;
+let currentBaseD = 60.33;
+
+// 預設或讀取儲存的校準值
+let calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
+try {
+    const saved = localStorage.getItem('shilin_map_calibration');
+    if (saved) calibData = JSON.parse(saved);
+} catch (e) {}
+
+function applyGroundTransform() {
+    if (!groundPlaneMesh) return;
+    const finalW = currentBaseW * calibData.scale;
+    const finalD = currentBaseD * calibData.scale;
+
+    // 即時重設平面幾何大小
+    groundPlaneMesh.geometry.dispose();
+    groundPlaneMesh.geometry = new THREE.PlaneGeometry(finalW, finalD);
+
+    // 即時更新中心位置
+    const cx = (currentBaseW / 2) + calibData.offsetX;
+    const cz = (currentBaseD / 2) + calibData.offsetZ;
+    groundPlaneMesh.position.set(cx, -0.01, cz);
+
+    // 更新介面數值
+    const elScale = document.getElementById('val-scale');
+    const elX = document.getElementById('val-x');
+    const elZ = document.getElementById('val-z');
+    const inputScale = document.getElementById('input-scale');
+    if (elScale) elScale.innerText = Number(calibData.scale).toFixed(3);
+    if (elX) elX.innerText = Number(calibData.offsetX).toFixed(2);
+    if (elZ) elZ.innerText = Number(calibData.offsetZ).toFixed(2);
+    if (inputScale && document.activeElement !== inputScale) {
+        inputScale.value = calibData.scale;
+    }
+}
 
 function updateGroundMap(mapWidth, mapDepth) {
+    currentBaseW = mapWidth;
+    currentBaseD = mapDepth;
+
     if (groundPlaneMesh) {
         scene.remove(groundPlaneMesh);
         if (groundPlaneMesh.geometry) groundPlaneMesh.geometry.dispose();
@@ -165,16 +204,6 @@ function updateGroundMap(mapWidth, mapDepth) {
         groundPlaneMesh = null;
     }
 
-    // ★ 依據截圖實測校正參數：
-    const scale = 1.15;       // 底圖放大 15%，讓右側文林路與整座街區接住外側大樓
-    const offsetX = -13.5;    // 水平平移：負值讓底圖向左移動，將底圖的圓圈拉到 3D 圓形下方
-    const offsetZ = 5.2;      // 南北平移：正值讓底圖向南（下方）移動，接齊緯度
-
-    const planeW = mapWidth * scale;
-    const planeD = mapDepth * scale;
-    const centerX = (mapWidth / 2) + offsetX;
-    const centerZ = (mapDepth / 2) + offsetZ;
-
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
         'map_shilin.png',
@@ -182,7 +211,7 @@ function updateGroundMap(mapWidth, mapDepth) {
             tex.wrapS = THREE.ClampToEdgeWrapping;
             tex.wrapT = THREE.ClampToEdgeWrapping;
 
-            const planeGeo = new THREE.PlaneGeometry(planeW, planeD);
+            const planeGeo = new THREE.PlaneGeometry(mapWidth * calibData.scale, mapDepth * calibData.scale);
             const planeMat = new THREE.MeshBasicMaterial({
                 map: tex,
                 side: THREE.FrontSide,
@@ -191,22 +220,89 @@ function updateGroundMap(mapWidth, mapDepth) {
 
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(centerX, -0.01, centerZ);
             scene.add(groundPlaneMesh);
-            console.log(`底圖已成功校正對齊！`);
+
+            applyGroundTransform();
+            console.log("底圖載入完成，已套用校準數值！");
         },
         undefined,
         () => {
-            // 回退方案保持不變
+            console.warn("未找到 map_shilin.png，顯示科技網格。");
             const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
             const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(mapWidth / 2, -0.02, mapDepth / 2);
             scene.add(groundPlaneMesh);
+            applyGroundTransform();
         }
     );
 }
+
+// ------------------ 綁定即時校準器控制項 (拉桿、方向鍵、儲存) ------------------
+function setupCalibrationControls() {
+    const inputScale = document.getElementById('input-scale');
+    const btnSave = document.getElementById('btn-save-calib');
+    const btnReset = document.getElementById('btn-reset-calib');
+    const calibHint = document.getElementById('calib-hint');
+
+    // 1. 拖動滑桿放大縮小
+    if (inputScale) {
+        inputScale.value = calibData.scale;
+        inputScale.addEventListener('input', (e) => {
+            calibData.scale = parseFloat(e.target.value);
+            applyGroundTransform();
+        });
+    }
+
+    // 2. 鍵盤方向鍵上下左右移動
+    window.addEventListener('keydown', (e) => {
+        // 如果正在輸入程式碼框，不要觸發地圖移動
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+
+        const step = e.shiftKey ? 1.0 : 0.15; // Shift 加速移動
+        let changed = false;
+
+        if (e.key === 'ArrowLeft')  { calibData.offsetX -= step; changed = true; }
+        if (e.key === 'ArrowRight') { calibData.offsetX += step; changed = true; }
+        if (e.key === 'ArrowUp')    { calibData.offsetZ -= step; changed = true; }
+        if (e.key === 'ArrowDown')  { calibData.offsetZ += step; changed = true; }
+
+        if (changed) {
+            e.preventDefault();
+            applyGroundTransform();
+        }
+    });
+
+    // 3. 按下按鈕儲存至 LocalStorage 並自動複製成 JS 代碼
+    if (btnSave) {
+        btnSave.addEventListener('click', () => {
+            localStorage.setItem('shilin_map_calibration', JSON.stringify(calibData));
+
+            const exportSnippet = `// 士林底圖校準參數\nconst calibData = { scale: ${calibData.scale.toFixed(3)}, offsetX: ${calibData.offsetX.toFixed(2)}, offsetZ: ${calibData.offsetZ.toFixed(2)} };`;
+            navigator.clipboard.writeText(exportSnippet).then(() => {
+                if (calibHint) {
+                    calibHint.innerText = `✅ 已儲存！(Scale: ${calibData.scale.toFixed(3)}, X: ${calibData.offsetX.toFixed(2)}, Z: ${calibData.offsetZ.toFixed(2)})`;
+                    calibHint.style.display = 'block';
+                    setTimeout(() => { calibHint.style.display = 'none'; }, 3000);
+                }
+            });
+        });
+    }
+
+    // 4. 重設為 0
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            calibData = { scale: 1.0, offsetX: 0.0, offsetZ: 0.0 };
+            localStorage.removeItem('shilin_map_calibration');
+            applyGroundTransform();
+        });
+    }
+
+    applyGroundTransform();
+}
+
+// 初始化校準面板
+setupCalibrationControls();
 // 電子圍欄可視化線框
 let fenceLineSegments = null;
 function updateFenceVisual(bounds) {
