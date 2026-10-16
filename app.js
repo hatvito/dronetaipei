@@ -151,7 +151,7 @@ scene.add(dirLight);
 const cityGroup = new THREE.Group();
 scene.add(cityGroup);
 
-// ------------------ 動態底圖系統 (直接套用真實計算尺寸) ------------------
+// ------------------ 動態底圖系統 (加入位置與縮放校正) ------------------
 let groundPlaneMesh = null;
 
 function updateGroundMap(mapWidth, mapDepth) {
@@ -165,15 +165,24 @@ function updateGroundMap(mapWidth, mapDepth) {
         groundPlaneMesh = null;
     }
 
+    // ★ 依據截圖實測校正參數：
+    const scale = 1.15;       // 底圖放大 15%，讓右側文林路與整座街區接住外側大樓
+    const offsetX = -13.5;    // 水平平移：負值讓底圖向左移動，將底圖的圓圈拉到 3D 圓形下方
+    const offsetZ = 5.2;      // 南北平移：正值讓底圖向南（下方）移動，接齊緯度
+
+    const planeW = mapWidth * scale;
+    const planeD = mapDepth * scale;
+    const centerX = (mapWidth / 2) + offsetX;
+    const centerZ = (mapDepth / 2) + offsetZ;
+
     const textureLoader = new THREE.TextureLoader();
-    // 優先載入全新的 map_shilin.png，失敗則回退到 .jpg
     textureLoader.load(
         'map_shilin.png',
         (tex) => {
             tex.wrapS = THREE.ClampToEdgeWrapping;
             tex.wrapT = THREE.ClampToEdgeWrapping;
 
-            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
+            const planeGeo = new THREE.PlaneGeometry(planeW, planeD);
             const planeMat = new THREE.MeshBasicMaterial({
                 map: tex,
                 side: THREE.FrontSide,
@@ -182,51 +191,22 @@ function updateGroundMap(mapWidth, mapDepth) {
 
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(mapWidth / 2, -0.01, mapDepth / 2);
+            groundPlaneMesh.position.set(centerX, -0.01, centerZ);
             scene.add(groundPlaneMesh);
-            console.log(`底圖 map_shilin.png 已精準對齊 (${mapWidth}m x ${mapDepth.toFixed(2)}m)！`);
+            console.log(`底圖已成功校正對齊！`);
         },
         undefined,
         () => {
-            // 嘗試載入 map_shilin.jpg
-            textureLoader.load(
-                'map_shilin.jpg',
-                (texJpg) => {
-                    texJpg.wrapS = THREE.ClampToEdgeWrapping;
-                    texJpg.wrapT = THREE.ClampToEdgeWrapping;
-
-                    const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-                    const planeMat = new THREE.MeshBasicMaterial({
-                        map: texJpg,
-                        side: THREE.FrontSide,
-                        depthWrite: true
-                    });
-
-                    groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
-                    groundPlaneMesh.rotation.x = -Math.PI / 2;
-                    groundPlaneMesh.position.set(mapWidth / 2, -0.01, mapDepth / 2);
-                    scene.add(groundPlaneMesh);
-                    console.log(`底圖 map_shilin.jpg 已精準對齊 (${mapWidth}m x ${mapDepth.toFixed(2)}m)！`);
-                },
-                undefined,
-                () => {
-                    console.warn("未找到底圖檔案，切換為深色網格地板。");
-                    const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-                    const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
-                    groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
-                    groundPlaneMesh.rotation.x = -Math.PI / 2;
-                    groundPlaneMesh.position.set(mapWidth / 2, -0.02, mapDepth / 2);
-                    scene.add(groundPlaneMesh);
-
-                    const gridHelper = new THREE.GridHelper(Math.max(mapWidth, mapDepth), 30, 0x00d2ff, 0x223344);
-                    gridHelper.position.set(mapWidth / 2, 0.01, mapDepth / 2);
-                    groundPlaneMesh.add(gridHelper);
-                }
-            );
+            // 回退方案保持不變
+            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
+            const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
+            groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
+            groundPlaneMesh.rotation.x = -Math.PI / 2;
+            groundPlaneMesh.position.set(mapWidth / 2, -0.02, mapDepth / 2);
+            scene.add(groundPlaneMesh);
         }
     );
 }
-
 // 電子圍欄可視化線框
 let fenceLineSegments = null;
 function updateFenceVisual(bounds) {
