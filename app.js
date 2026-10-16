@@ -156,7 +156,7 @@ let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
 // 預設校準參數 (包含 scaleZ 獨立拉伸)
-let calibData = { scale: 1.0, scaleZ: 1.0, offsetX: -1.5, offsetZ: -3.6 };
+let calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 try {
     const saved = localStorage.getItem('shilin_map_calibration');
     if (saved) calibData = Object.assign(calibData, JSON.parse(saved));
