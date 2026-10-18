@@ -1,5 +1,5 @@
 // =========================================================================
-// app.js - 主入口、明亮日光 3D 視圖、視角跟隨、AI 提示詞彈窗與事件綁定 (完整版)
+// app.js - 主入口、明亮日光 3D 視圖、視角跟隨與全域 AI 提示詞功能 (v3.0)
 // =========================================================================
 
 const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器
@@ -96,7 +96,6 @@ codeTextarea.addEventListener('input', () => {
 const viewer = document.getElementById('viewer');
 const scene = new THREE.Scene();
 
-// 晴朗微霧天空底色
 scene.background = new THREE.Color(0xdce5ed);
 scene.fog = new THREE.FogExp2(0xdce5ed, 0.0035);
 scene.add(cityGroup);
@@ -117,7 +116,6 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
-// 晴空白晝光照系統
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0xcfd6df, 0.85);
 hemiLight.position.set(0, 150, 0);
 scene.add(hemiLight);
@@ -220,55 +218,73 @@ async function resetScene() {
     updateScoreboard(START_POS, "待命出發");
 }
 
-// ------------------ 事件綁定 (種子、AI提示詞、日誌) ------------------
 document.getElementById('random-seed-btn')?.addEventListener('click', () => {
     document.getElementById('seed-input').value = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
     resetScene();
 });
 document.getElementById('apply-seed-btn')?.addEventListener('click', resetScene);
 
-// AI 提示詞彈出視窗事件綁定
-const promptModal = document.getElementById('prompt-modal');
-const openPromptBtn = document.getElementById('open-prompt-modal-btn');
-const quickPromptBtn = document.getElementById('quick-prompt-btn');
-const closeModalBtn = document.getElementById('close-modal-btn');
-const copyPromptBtn = document.getElementById('copy-prompt-btn');
+// =========================================================================
+// 全域 AI 提示詞對話窗函式 (掛載至 window，保證 HTML inline onclick 100% 成功)
+// =========================================================================
 
-if (openPromptBtn && promptModal) {
-    openPromptBtn.addEventListener('click', () => {
-        promptModal.style.display = 'flex';
-    });
-}
+window.openPromptDialog = function() {
+    const modal = document.getElementById('prompt-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+};
 
-if (quickPromptBtn && promptModal) {
-    quickPromptBtn.addEventListener('click', () => {
-        promptModal.style.display = 'flex';
-    });
-}
+window.closePromptDialog = function() {
+    const modal = document.getElementById('prompt-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+};
 
-if (closeModalBtn && promptModal) {
-    closeModalBtn.addEventListener('click', () => {
-        promptModal.style.display = 'none';
-    });
-}
+window.copyPromptTextFromModal = function() {
+    const txt = document.getElementById('prompt-text');
+    const btn = document.getElementById('modal-copy-btn');
+    if (txt) {
+        navigator.clipboard.writeText(txt.innerText).then(() => {
+            if (btn) {
+                const old = btn.innerText;
+                btn.innerText = "✅ 已複製！";
+                setTimeout(() => btn.innerText = old, 2000);
+            }
+        });
+    }
+};
 
+window.quickCopyPrompt = function() {
+    const txt = document.getElementById('prompt-text');
+    const btn = document.getElementById('quick-prompt-btn');
+    if (txt) {
+        navigator.clipboard.writeText(txt.innerText).then(() => {
+            if (btn) {
+                const old = btn.innerText;
+                btn.innerText = "✅ 提示詞已複製！";
+                btn.style.background = "#10b981";
+                btn.style.color = "#fff";
+                setTimeout(() => {
+                    btn.innerText = old;
+                    btn.style.background = "";
+                    btn.style.color = "";
+                }, 2000);
+            }
+        }).catch(() => {
+            window.openPromptDialog();
+        });
+    }
+};
+
+// 點擊彈窗外背景關閉
 window.addEventListener('click', (e) => {
-    if (e.target === promptModal) {
-        promptModal.style.display = 'none';
+    const modal = document.getElementById('prompt-modal');
+    if (e.target === modal) {
+        modal.style.display = 'none';
     }
 });
-
-if (copyPromptBtn) {
-    copyPromptBtn.addEventListener('click', () => {
-        const txt = document.getElementById('prompt-text');
-        if (txt) {
-            navigator.clipboard.writeText(txt.innerText).then(() => {
-                copyPromptBtn.innerText = "✅ 提示詞已複製！";
-                setTimeout(() => { copyPromptBtn.innerText = "📋 複製提示詞"; }, 2000);
-            });
-        }
-    });
-}
 
 // 模擬試飛啟動
 document.getElementById('run-btn')?.addEventListener('click', async () => {
