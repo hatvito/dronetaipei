@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>無人機都市避障挑戰賽 - 台北士林</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="style.css?v=2.1">
+    <link rel="stylesheet" href="style.css?v=3.0">
     <!-- Three.js 核心與 OrbitControls 軌道控制器 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -29,10 +29,10 @@
                 </div>
             </div>
 
-            <!-- 外部 AI 提示詞按鈕 -->
+            <!-- 外部 AI 提示詞按鈕 (直掛 onclick，保證不失效) -->
             <div class="ai-prompt-box">
-                <button id="open-prompt-modal-btn">💡 請外部 AI 幫你寫策略</button>
-                <button id="quick-prompt-btn" class="secondary-btn">取得 AI 提示詞</button>
+                <button id="open-prompt-modal-btn" onclick="openPromptDialog()">💡 請外部 AI 幫你寫策略</button>
+                <button id="quick-prompt-btn" class="secondary-btn" onclick="quickCopyPrompt()">取得 AI 提示詞</button>
             </div>
 
             <!-- 避障策略腳本編輯器 -->
@@ -108,15 +108,15 @@
         </div>
     </div>
 
-    <!-- AI 提示詞彈窗 (四層式清楚架構) -->
-    <div class="modal-overlay" id="prompt-modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🤖 複製提示詞至你的 AI (ChatGPT / Claude / Gemini)</h2>
-                <span id="close-modal-x" class="close-btn">&times;</span>
+    <!-- AI 提示詞彈窗 (四層式清楚架構，採用最頂層 absolute 保證浮現) -->
+    <div id="prompt-modal" style="display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); z-index: 999999; justify-content: center; align-items: center;">
+        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; width: 680px; max-width: 92%; max-height: 90vh; padding: 20px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <h3 style="color: #38bdf8; font-size: 16px; margin: 0;">🤖 複製提示詞至你的 AI (ChatGPT / Claude / Gemini)</h3>
+                <span onclick="closePromptDialog()" style="font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1;">&times;</span>
             </div>
-            <p style="font-size: 0.85rem; color: #94a3b8; margin: 8px 0;">將下方文字複製貼給 AI，AI 即會依規範輸出帶有中文參數註解的策略代碼：</p>
-            <div class="modal-body prompt-box" id="prompt-text">你是一位無人機自主飛行演算法專家。請幫我撰寫一段 JavaScript 程式碼，實作無人機自主避障控制器類別 `StudentController`。
+            <p style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">將下方文字複製貼給 AI，AI 即會依規範輸出帶有中文參數註解的策略代碼：</p>
+            <div id="prompt-text" style="flex: 1; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px; color: #cbd5e1; font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; user-select: all;">你是一位無人機自主飛行演算法專家。請幫我撰寫一段 JavaScript 程式碼，實作無人機自主避障控制器類別 `StudentController`。
 
 ============================================================
 【第一部分：演算法策略需求（★ 學生可自行增加／修改此區塊需求）】
@@ -187,16 +187,16 @@ class StudentController {
 }
 
 請直接輸出完整且乾淨的 JavaScript 類別程式碼。</div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
-                <button class="fdr-btn" id="close-modal-btn" style="width: auto; padding: 6px 14px;">關閉</button>
-                <button class="primary-btn" id="copy-prompt-btn" style="padding: 6px 16px;">📋 複製提示詞</button>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+                <button onclick="closePromptDialog()" class="fdr-btn" style="width: auto; padding: 7px 16px;">關閉</button>
+                <button id="modal-copy-btn" onclick="copyPromptTextFromModal()" class="primary-btn" style="padding: 7px 18px;">📋 複製提示詞</button>
             </div>
         </div>
     </div>
 
-    <!-- 模組化腳本依序載入 -->
-    <script src="city.js?v=2.1"></script>
-    <script src="drone-sim.js?v=2.1"></script>
-    <script src="app.js?v=2.1"></script>
+    <!-- 模組化腳本依序載入 (加版本號防止 Chrome 頑固快取) -->
+    <script src="city.js?v=3.0"></script>
+    <script src="drone-sim.js?v=3.0"></script>
+    <script src="app.js?v=3.0"></script>
 </body>
 </html>
