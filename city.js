@@ -1,5 +1,5 @@
 // =========================================================================
-// city.js - 明亮現代都市建築、12種風格隨機外觀貼皮與起訖點配置
+// city.js - 明亮現代都市建築、12種風格隨機外觀貼皮與起訖點配置 (修正起訖點沉地)
 // =========================================================================
 
 let cityGroup = new THREE.Group();
@@ -15,49 +15,33 @@ let fenceLineSegments = null;
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
 
-// 士林最佳精準對齊參數
 const calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 
-// ------------------ 1. 12 種現代都市建築風格色彩庫 ------------------
+// 1. 12 種現代都市建築風格色彩庫
 const BUILDING_STYLES = [
-    // 1. 現代極簡米白 (白牆 + 深藍灰窗 + 磚紅屋頂)
     { wall: '#f1f5f9', line: '#cbd5e1', glass: '#1e293b', frame: '#475569', roof: 0x824438 },
-    // 2. 溫暖米砂色 (暖沙牆 + 墨黑窗 + 深褐屋頂)
     { wall: '#f5efe6', line: '#dcd2c4', glass: '#292524', frame: '#57534e', roof: 0x6c4a38 },
-    // 3. 科技冷灰 (石材灰牆 + 冰藍窗 + 石墨黑屋頂)
     { wall: '#e2e8f0', line: '#94a3b8', glass: '#0f172a', frame: '#334155', roof: 0x334155 },
-    // 4. 莫蘭迪青灰 (北歐灰綠牆 + 深邃窗 + 瀝青灰屋頂)
     { wall: '#e0e7e9', line: '#b4c5c7', glass: '#162b32', frame: '#3b555e', roof: 0x384a52 },
-    // 5. 沉穩深灰石板 (深炭灰牆 + 鍍膜藍窗 + 灰黑屋頂)
     { wall: '#cbd5e1', line: '#64748b', glass: '#090d16', frame: '#1e293b', roof: 0x1e293b },
-    // 6. 經典暖磚橘 (磚橘牆面 + 暗黑窗 + 磚紅屋頂)
     { wall: '#faebe3', line: '#e8cbbe', glass: '#272021', frame: '#5c4d4f', roof: 0x994d3f },
-    // 7. 水泥清水模 (冷水泥灰 + 俐落黑窗 + 台灣公寓綠防水漆屋頂)
     { wall: '#d8dee9', line: '#aeb9cc', glass: '#1a202c', frame: '#4a5568', roof: 0x3d6b52 },
-    // 8. 摩天大樓玻璃帷幕感 (亮白外框 + 大面積海藍窗 + 鋼鐵冷灰屋頂)
     { wall: '#f8fafc', line: '#94a3b8', glass: '#0369a1', frame: '#0284c7', roof: 0x475569 },
-    // 9. 柔和象牙黃 (象牙白牆 + 深青窗 + 暖紅瓦屋頂)
     { wall: '#fef3c7', line: '#fde68a', glass: '#1c1917', frame: '#78350f', roof: 0x854d0e },
-    // 10. 都會現代褐 (卡其灰褐 + 墨色窗 + 深咖啡屋頂)
     { wall: '#e7e5e4', line: '#c7c2be', glass: '#292524', frame: '#44403c', roof: 0x573d32 },
-    // 11. 辦公商業大樓 (淺冷藍牆 + 鍍膜黑藍窗 + 石板黑屋頂)
     { wall: '#e0f2fe', line: '#7dd3fc', glass: '#082f49', frame: '#0369a1', roof: 0x1e293b },
-    // 12. 簡約奶霜色 (暖灰白 + 墨綠黑窗 + 磚褐屋頂)
     { wall: '#ecefe6', line: '#c6cdc0', glass: '#1b241e', frame: '#3f4f44', roof: 0x6e473b }
 ];
 
-// 動態為特定風格繪製 256x256 窗格貼圖
 function generateStyleTexture(cfg) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
-    // 外牆底色
     ctx.fillStyle = cfg.wall;
     ctx.fillRect(0, 0, 256, 256);
 
-    // 溝縫線
     ctx.strokeStyle = cfg.line;
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, 256, 256);
@@ -73,15 +57,12 @@ function generateStyleTexture(cfg) {
             const w = cellW - 20;
             const h = cellH - 24;
 
-            // 窗框
             ctx.fillStyle = cfg.frame;
             ctx.fillRect(x, y, w, h);
 
-            // 玻璃主體
             ctx.fillStyle = cfg.glass;
             ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
 
-            // 玻璃對角反光光澤
             ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
             ctx.beginPath();
             ctx.moveTo(x + 2, y + 2);
@@ -90,7 +71,6 @@ function generateStyleTexture(cfg) {
             ctx.closePath();
             ctx.fill();
 
-            // 窗台陰影
             ctx.fillStyle = 'rgba(0,0,0,0.18)';
             ctx.fillRect(x - 1, y + h, w + 2, 3);
         }
@@ -102,7 +82,6 @@ function generateStyleTexture(cfg) {
     return tex;
 }
 
-// 預先建構好 12 套材質組 (頂底屋頂 + 側面外牆)
 const PRECOMPILED_STYLES = BUILDING_STYLES.map(cfg => {
     return {
         roofMat: new THREE.MeshLambertMaterial({ color: cfg.roof }),
@@ -110,7 +89,7 @@ const PRECOMPILED_STYLES = BUILDING_STYLES.map(cfg => {
     };
 });
 
-// ------------------ 2. 世界座標 UV 展開 (保證窗格方正無拉扯) ------------------
+// 2. 世界座標 UV 展開
 function applyWorldSpaceUV(geometry) {
     const pos = geometry.attributes.position;
     const uvs = [];
@@ -127,7 +106,7 @@ function applyWorldSpaceUV(geometry) {
     geometry.attributes.uv.needsUpdate = true;
 }
 
-// ------------------ 3. 鋪設士林衛星底圖 ------------------
+// 3. 鋪設士林衛星底圖
 function updateGroundMap(scene, mapWidth, mapDepth) {
     currentBaseW = mapWidth;
     currentBaseD = mapDepth;
@@ -173,7 +152,7 @@ function updateGroundMap(scene, mapWidth, mapDepth) {
     );
 }
 
-// ------------------ 4. 緊縮型電子圍欄線框 ------------------
+// 4. 緊縮型電子圍欄線框
 function updateFenceVisual(scene, bounds) {
     if (fenceLineSegments) scene.remove(fenceLineSegments);
     const bw = bounds.xmax - bounds.xmin;
@@ -190,7 +169,7 @@ function updateFenceVisual(scene, bounds) {
     scene.add(fenceLineSegments);
 }
 
-// ------------------ 5. 精緻停機坪 ------------------
+// 5. 停機坪
 function createHelipad(x, y, z, colorHex) {
     const padGroup = new THREE.Group();
     const pad = new THREE.Mesh(
@@ -212,7 +191,7 @@ function createHelipad(x, y, z, colorHex) {
     return padGroup;
 }
 
-// ------------------ 6. 萬種種子雜湊生成器 (0000~9999) ------------------
+// 6. 萬種種子雜湊生成器 (0000~9999)
 function createSeededRandom(seedInt) {
     let s = Math.abs(seedInt) % 10000;
     s = ((s ^ 0x6D2B79F5) * 0x85EBCA6B) >>> 0;
@@ -227,7 +206,7 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// ------------------ 7. 載入並建構士林 3D 現代明亮建築群 (多元色彩版) ------------------
+// 7. 載入並建構士林 3D 現代明亮建築群 (徹底防止起訖點壓地)
 async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
@@ -292,8 +271,9 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
             if (i === 0) shape.moveTo(x, z); else shape.lineTo(x, z);
         });
 
+        // 確保每棟建築物都有足夠高度（最低 5.5 米）
         let rawH = parseFloat(f.properties?.height || (f.properties?.['building:levels'] ? f.properties['building:levels'] * 3.2 : null));
-        let bh = rawH ? Math.min(23.0, Math.max(5.5, rawH * 0.45)) : (7.0 + ((idx * 7) % 14));
+        let bh = rawH ? Math.min(23.0, Math.max(5.5, rawH * 0.45)) : (6.5 + ((idx * 7) % 15));
 
         tempBuildings.push({
             shape, bh, bMinX, bMaxX, bMinZ, bMaxZ,
@@ -308,15 +288,19 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     updateFenceVisual(scene, GEOFENCE);
     updateGroundMap(scene, MAP_WIDTH, MAP_DEPTH);
 
-    // 全地圖建築候選
+    // ★ 關鍵修復：嚴格限定只有「真實有高度（bh >= 5.0）且在圍欄內」的建築物才進入候選池
     let validIndices = [];
     tempBuildings.forEach((b, i) => {
-        if (b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
+        if (b.bh >= 5.0 &&
+            b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
             b.cz >= GEOFENCE.zmin + 0.5 && b.cz <= GEOFENCE.zmax - 0.5) {
             validIndices.push(i);
         }
     });
-    if (validIndices.length < 2) validIndices = tempBuildings.map((_, i) => i);
+
+    if (validIndices.length < 2) {
+        validIndices = tempBuildings.map((_, i) => i);
+    }
 
     const pickA = Math.floor(rng() * validIndices.length);
     let pickB = Math.floor(rng() * (validIndices.length - 1));
@@ -325,9 +309,8 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const startIdx = validIndices[pickA];
     const goalIdx = validIndices[pickB];
 
-    // 起訖大樓專屬醒目材質
-    const startMat = new THREE.MeshLambertMaterial({ color: 0x10b981 }); // 翡翠綠
-    const goalMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });  // 耀眼金黃
+    const startMat = new THREE.MeshLambertMaterial({ color: 0x10b981 });
+    const goalMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
 
     tempBuildings.forEach((bData, idx) => {
         const extrudeSettings = { depth: bData.bh, bevelEnabled: false };
@@ -344,23 +327,23 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
         let edgeOpacity = 0.3;
 
         if (isStart) {
+            // ★ 起點大樓整棟翡翠綠
             materials = [startMat, startMat];
             edgeColor = '#ffffff';
             edgeOpacity = 0.9;
         } else if (isGoal) {
+            // ★ 終點大樓整棟流金黃 (整棟實體大樓浮現，絕不沉入地底)
             materials = [goalMat, goalMat];
             edgeColor = '#ffffff';
             edgeOpacity = 0.9;
         } else {
-            // ★ 核心改進：依大樓空間位置與序號，均勻散佈 12 種風格配色
             const styleIdx = Math.floor((Math.abs(Math.sin(idx * 12.9898 + bData.cx * 78.233)) * PRECOMPILED_STYLES.length)) % PRECOMPILED_STYLES.length;
             const chosen = PRECOMPILED_STYLES[styleIdx];
-            
-            // 使用 clone 確保獨立實例，防全場連鎖變色
             materials = [chosen.roofMat.clone(), chosen.sideMat.clone()];
         }
 
         const mesh = new THREE.Mesh(geom, materials);
+        // 重要：Y 軸抬升大樓高度，讓頂部與停機坪齊平
         mesh.position.y = bData.bh;
         cityGroup.add(mesh);
 
@@ -383,9 +366,11 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const startB = buildings[startIdx];
     const goalB = buildings[goalIdx];
 
+    // 起點停機坪置於綠色大樓頂部
     START_POS = [startB.cx, startB.height + droneRadius + 0.05, startB.cz];
     createHelipad(startB.cx, startB.height, startB.cz, 0x10b981);
 
+    // 終點停機坪置於金色大樓頂部（必定大於 5m 高度，不再被地圖吞掉）
     GOAL_POS = [goalB.cx, goalB.height + droneRadius + 0.05, goalB.cz];
     createHelipad(goalB.cx, goalB.height, goalB.cz, 0xf59e0b);
 
