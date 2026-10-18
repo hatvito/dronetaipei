@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>無人機都市避障挑戰賽 - 台北士林</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Three.js 核心與 OrbitControls -->
+    <!-- Three.js 核心與 OrbitControls 軌道控制器 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
@@ -18,11 +18,11 @@
                 <p class="subtitle">地圖 100x100 | 限高 25m | 真實都市見習生手測</p>
             </div>
 
-            <!-- 地圖種子設定 -->
+            <!-- 地圖種子設定 (支援 0000 ~ 9999) -->
             <div class="control-group">
-                <label for="seed-input">地圖種子碼 (Seed)</label>
+                <label for="seed-input">地圖種子碼 (Seed: 0000~9999)</label>
                 <div class="seed-input-row">
-                    <input type="number" id="seed-input" value="5655">
+                    <input type="text" id="seed-input" value="5655" maxlength="4">
                     <button id="random-seed-btn" title="隨機產生新種子">🎲 換新種子</button>
                     <button id="apply-seed-btn" title="套用種子重新生成關卡">更換地圖</button>
                 </div>
@@ -102,61 +102,8 @@
             <!-- Three.js 繪圖畫布容器 -->
             <div id="viewer"></div>
 
-            <!-- 底圖可視化微調校準面板 -->
-            <div id="map-calibrator" style="position: absolute; right: 20px; bottom: 35px; z-index: 100; background: rgba(16, 20, 28, 0.95); border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; color: #fff; font-family: sans-serif; font-size: 13px; width: 260px; box-shadow: 0 4px 15px rgba(0,0,0,0.6);">
-                <div style="font-weight: bold; color: #00d2ff; margin-bottom: 8px; display: flex; justify-content: space-between;">
-                    <span>🗺️ 底圖精密校準器</span>
-                    <span style="font-size: 11px; color: #888;">即時對齊</span>
-                </div>
-                
-                <!-- 1. 整體縮放 -->
-                <div style="margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <label>整體縮放 (Scale):</label>
-                        <span id="val-scale" style="color: #ffd700; font-weight: bold;">1.000</span>
-                    </div>
-                    <input type="range" id="input-scale" min="0.5" max="2.5" step="0.005" value="1.0" style="width: 100%; margin-top: 4px; cursor: pointer;">
-                </div>
-
-                <!-- 2. 南北拉伸/壓縮 (解決上下偏離問題) -->
-                <div style="margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <label>南北拉伸 (Aspect Z):</label>
-                        <span id="val-scale-z" style="color: #00d2ff; font-weight: bold;">1.000</span>
-                    </div>
-                    <input type="range" id="input-scale-z" min="0.5" max="1.8" step="0.005" value="1.0" style="width: 100%; margin-top: 4px; cursor: pointer;">
-                </div>
-
-                <!-- 座標數值顯示 -->
-                <div style="margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 12px;">
-                    <span>X: <span id="val-x" style="color: #00ff88; font-weight: bold;">0.00</span>m</span>
-                    <span>Z: <span id="val-z" style="color: #00ff88; font-weight: bold;">0.00</span>m</span>
-                </div>
-
-                <!-- 實體十字方向鍵 -->
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 10px;">
-                    <button id="btn-move-up" style="width: 44px; height: 30px; background: #222d3d; color: #00d2ff; border: 1px solid #00d2ff; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">▲</button>
-                    <div style="display: flex; gap: 6px;">
-                        <button id="btn-move-left" style="width: 44px; height: 30px; background: #222d3d; color: #00d2ff; border: 1px solid #00d2ff; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">◀</button>
-                        <button id="btn-move-down" style="width: 44px; height: 30px; background: #222d3d; color: #00d2ff; border: 1px solid #00d2ff; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">▼</button>
-                        <button id="btn-move-right" style="width: 44px; height: 30px; background: #222d3d; color: #00d2ff; border: 1px solid #00d2ff; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">▶</button>
-                    </div>
-                </div>
-
-                <!-- 儲存與重設 -->
-                <div style="display: flex; gap: 8px;">
-                    <button id="btn-save-calib" style="flex: 1; background: #00d2ff; color: #000; border: none; border-radius: 4px; padding: 6px; font-weight: bold; cursor: pointer;">
-                        💾 儲存並複製
-                    </button>
-                    <button id="btn-reset-calib" style="background: #444; color: #fff; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer;">
-                        重設
-                    </button>
-                </div>
-                <div id="calib-hint" style="display: none; color: #00ff88; font-size: 11px; margin-top: 6px; text-align: center;"></div>
-            </div>
-
             <!-- 右下角視角操作提示 -->
-            <div id="view-hints">操作：左鍵平移 | 右鍵旋轉 | 滾輪縮放</div>
+            <div id="view-hints">操作：滑鼠左鍵旋轉 | 右鍵平移 | 滾輪縮放</div>
         </div>
     </div>
 
@@ -174,11 +121,11 @@
 
 【場景規則】
 1. 坐標系：X 為東西向 (0~100m)，Y 為垂直高度 (限高 25m)，Z 為南北向 (0~60.33m)。
-2. 空域安全圍欄：X∈[0, 100], Z∈[0, 60.33], Y∈[0, 25]。碰觸邊界或大樓均視為墜毀。
-3. 無人機半徑 0.25m，巡航速度 8~12 m/s。
+2. 空域安全圍欄：X∈[5, 95], Z∈[5, 55.33], Y∈[0, 25]。碰觸邊界或大樓均視為墜毀。
+3. 無人機半徑 0.12m，巡航速度 8~12 m/s。
 4. 探測器：提供 `raycast_func(origin, direction, maxDistance)`，呼叫後回傳該方向上最近障礙物的真實距離。
 5. 必須實作方法：`get_velocity(current_pos, raycast_func, dt)`，每幀回傳三維速度向量 `[vx, vy, vz]`。
-6. 起點與終點位於不同的大樓頂樓停機坪上，需具備攀升、巡航、避障、局部死角逃脫、降落停機坪能力。
+6. 起點（綠色建築）與終點（金色建築）位於不同的大樓頂樓停機坪上，需具備攀升、巡航、避障、局部死角逃脫、降落停機坪能力。
 
 請提供乾淨無瑕疵的 JavaScript 程式碼，僅回傳 class StudentController { ... } 實作。
                 </div>
@@ -189,6 +136,9 @@
         </div>
     </div>
 
+    <!-- 模組化腳本依序載入 -->
+    <script src="city.js"></script>
+    <script src="drone-sim.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
