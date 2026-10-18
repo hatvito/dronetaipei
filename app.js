@@ -1,5 +1,5 @@
 // =========================================================================
-// app.js - 主入口、3D 渲染視圖、視角跟隨與事件綁定
+// app.js - 主入口、明亮日光 3D 視圖、視角跟隨與事件綁定 (淡海風格)
 // =========================================================================
 
 const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器
@@ -92,10 +92,13 @@ codeTextarea.addEventListener('input', () => {
     }
 });
 
-// 3D 視圖初始化
+// ------------------ 3D 視圖初始化 (淡海校園晴朗日光風格) ------------------
 const viewer = document.getElementById('viewer');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0c10);
+
+// 晴朗微霧天空底色 (不再是死黑)
+scene.background = new THREE.Color(0xdce5ed);
+scene.fog = new THREE.FogExp2(0xdce5ed, 0.0035);
 scene.add(cityGroup);
 
 const camera = new THREE.PerspectiveCamera(45, (viewer.clientWidth || 800) / (viewer.clientHeight || 600), 1, 1000);
@@ -103,6 +106,8 @@ camera.position.set(50, 110, 85);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(viewer.clientWidth || 800, viewer.clientHeight || 600);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
 viewer.appendChild(renderer.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -110,15 +115,22 @@ controls.target.set(50, 0, 30);
 controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.92));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.65);
-dirLight.position.set(50, 120, 30);
-scene.add(dirLight);
+// 晴空白晝光照系統
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xcfd6df, 0.85); // 上方白天亮光，下方微冷補光
+hemiLight.position.set(0, 150, 0);
+scene.add(hemiLight);
 
-// 無人機本體與路徑線
-const droneMesh = new THREE.Mesh(new THREE.SphereGeometry(DRONE_RADIUS, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+const sunLight = new THREE.DirectionalLight(0xfffaed, 0.95); // 溫暖斜向自然日光
+sunLight.position.set(60, 130, 40);
+scene.add(sunLight);
+
+// 無人機本體與紅色航跡線
+const droneMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
+    new THREE.MeshLambertMaterial({ color: 0xef4444 }) // 亮紅色穿越機，醒目易見
+);
 scene.add(droneMesh);
 
 let trailPositions = [];
@@ -126,7 +138,7 @@ let trailLine = null;
 function clearTrail() {
     if (trailLine) scene.remove(trailLine);
     trailPositions = [];
-    trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }));
+    trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xd97706, linewidth: 2 }));
     trailLine.frustumCulled = false;
     scene.add(trailLine);
 }
@@ -140,7 +152,7 @@ let laserLine = null;
 function showDirectLaser(fromPt, toPt) {
     if (laserLine) scene.remove(laserLine);
     const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...fromPt), new THREE.Vector3(...toPt)]);
-    laserLine = new THREE.Line(geom, new THREE.LineDashedMaterial({ color: 0xff1493, dashSize: 1.2, gapSize: 0.6, linewidth: 2 }));
+    laserLine = new THREE.Line(geom, new THREE.LineDashedMaterial({ color: 0xd946ef, dashSize: 1.2, gapSize: 0.6, linewidth: 2 }));
     laserLine.frustumCulled = false;
     laserLine.computeLineDistances();
     scene.add(laserLine);
@@ -200,7 +212,7 @@ async function resetScene() {
     activeVelocity = [1.0, 0.0, 1.0];
 
     document.getElementById('flight-status').innerText = "準備就緒";
-    document.getElementById('flight-status').style.color = "#bbb";
+    document.getElementById('flight-status').style.color = "#475569";
     document.getElementById('flight-time').innerText = "0.00";
     document.getElementById('flight-alt').innerText = START_POS[1].toFixed(2);
     document.getElementById('download-log-btn').disabled = true;
@@ -231,7 +243,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
     flightLogs = [];
     flightEvents = [];
     flightSummary = null;
-    flightEvents.push(`[0.00s] 無人機自綠色大樓起飛。`);
+    flightEvents.push(`[0.00s] 無人機自綠色大樓屋頂起飛。`);
 
     let currentPos = [...START_POS];
     droneMesh.position.set(...currentPos);
@@ -239,7 +251,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
 
     const statusEl = document.getElementById('flight-status');
     statusEl.innerText = "飛行中...";
-    statusEl.style.color = "#00d2ff";
+    statusEl.style.color = "#0284c7";
 
     let timer = 0.0;
     const dt = 0.033;
@@ -256,7 +268,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
         } catch (err) {
             clearInterval(simInterval);
             statusEl.innerText = "執行期錯誤";
-            statusEl.style.color = "#ff4444";
+            statusEl.style.color = "#ef4444";
             finalizeFlight(currentPos, timer, `執行期錯誤: ${err.message}`);
             return;
         }
@@ -271,7 +283,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
             droneMesh.position.set(...crashPos);
             appendTrail(...crashPos);
             statusEl.innerText = `墜毀：${collision.reason}`;
-            statusEl.style.color = "#ff3366";
+            statusEl.style.color = "#ef4444";
             showDirectLaser(crashPos, GOAL_POS);
             updateScoreboard(crashPos, `墜毀：${collision.reason}`);
             finalizeFlight(crashPos, timer, `墜毀：${collision.reason}`);
@@ -285,7 +297,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
         if (Math.hypot(currentPos[0] - GOAL_POS[0], currentPos[1] - GOAL_POS[1], currentPos[2] - GOAL_POS[2]) < 0.9) {
             clearInterval(simInterval);
             statusEl.innerText = "🎉 成功降落於金色目標大樓！";
-            statusEl.style.color = "#00ff88";
+            statusEl.style.color = "#10b981";
             updateScoreboard(GOAL_POS, "成功抵達 (完賽)");
             finalizeFlight(GOAL_POS, timer, "成功抵達 (完賽)");
             return;
@@ -294,7 +306,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
         if (timer > 200.0) {
             clearInterval(simInterval);
             statusEl.innerText = "任務超時";
-            statusEl.style.color = "#ffaa00";
+            statusEl.style.color = "#d97706";
             finalizeFlight(currentPos, timer, "任務超時 (200s)");
         }
     }, 33);
@@ -303,7 +315,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
 // FDR 日誌下載
 document.getElementById('download-log-btn')?.addEventListener('click', () => {
     if (!flightSummary) return;
-    let content = `無人機黑盒子紀錄\n狀態: ${flightSummary.status}\n總時間: ${flightSummary.duration}s\n剩餘距離: ${flightSummary.remainDist}m\n探索率: ${flightSummary.progress}%\n`;
+    let content = `無人機黑盒子紀錄 (士林街區)\n狀態: ${flightSummary.status}\n總時間: ${flightSummary.duration}s\n剩餘距離: ${flightSummary.remainDist}m\n探索率: ${flightSummary.progress}%\n`;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
