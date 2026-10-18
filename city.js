@@ -1,5 +1,5 @@
 // =========================================================================
-// city.js - 都市地圖、建築幾何、程序化貼皮與起訖點配置
+// city.js - 都市地圖、高級極簡建築幾何、緊縮電子圍欄與起訖點配置
 // =========================================================================
 
 let cityGroup = new THREE.Group();
@@ -14,39 +14,11 @@ let fenceLineSegments = null;
 
 let currentBaseW = 100.0;
 let currentBaseD = 60.33;
+
+// ★ 實測鎖定之士林最佳精準校準數據
 const calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 
-// 1. 動態生成科技窗格外牆貼圖 (全場共用，零外部圖片負擔)
-function createBuildingTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#181e28';
-    ctx.fillRect(0, 0, 128, 128);
-
-    const rows = 8, cols = 8;
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const rand = Math.random();
-            if (rand > 0.45) {
-                ctx.fillStyle = rand > 0.88 ? '#00d2ff' : '#3d526e';
-            } else {
-                ctx.fillStyle = '#10141c';
-            }
-            ctx.fillRect(c * 16 + 3, r * 16 + 3, 10, 10);
-        }
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-}
-const buildingTexture = createBuildingTexture();
-
-// 2. 鋪設士林衛星底圖
+// 1. 鋪設士林衛星底圖 (鎖定最佳對齊參數)
 function updateGroundMap(scene, mapWidth, mapDepth) {
     currentBaseW = mapWidth;
     currentBaseD = mapDepth;
@@ -54,33 +26,54 @@ function updateGroundMap(scene, mapWidth, mapDepth) {
     if (groundPlaneMesh) {
         scene.remove(groundPlaneMesh);
         if (groundPlaneMesh.geometry) groundPlaneMesh.geometry.dispose();
+        if (groundPlaneMesh.material) {
+            if (groundPlaneMesh.material.map) groundPlaneMesh.material.map.dispose();
+            groundPlaneMesh.material.dispose();
+        }
         groundPlaneMesh = null;
     }
 
     const textureLoader = new THREE.TextureLoader();
-    textureLoader.load('map_shilin.png', (tex) => {
-        tex.wrapS = THREE.ClampToEdgeWrapping;
-        tex.wrapT = THREE.ClampToEdgeWrapping;
+    textureLoader.load(
+        'map_shilin.png',
+        (tex) => {
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
 
-        const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-        const planeMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.FrontSide, depthWrite: true });
+            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
+            const planeMat = new THREE.MeshBasicMaterial({
+                map: tex,
+                side: THREE.FrontSide,
+                depthWrite: true
+            });
 
-        groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
-        groundPlaneMesh.rotation.x = -Math.PI / 2;
+            groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
+            groundPlaneMesh.rotation.x = -Math.PI / 2;
 
-        const sx = calibData.scale;
-        const sz = calibData.scale * (calibData.scaleZ || 1.0);
-        groundPlaneMesh.scale.set(sx, sz, 1.0);
+            const sx = calibData.scale;
+            const sz = calibData.scale * (calibData.scaleZ || 1.0);
+            groundPlaneMesh.scale.set(sx, sz, 1.0);
 
-        const cx = (currentBaseW / 2) + calibData.offsetX;
-        const cz = (currentBaseD / 2) + calibData.offsetZ;
-        groundPlaneMesh.position.set(cx, -0.01, cz);
+            const cx = (currentBaseW / 2) + calibData.offsetX;
+            const cz = (currentBaseD / 2) + calibData.offsetZ;
+            groundPlaneMesh.position.set(cx, -0.01, cz);
 
-        scene.add(groundPlaneMesh);
-    });
+            scene.add(groundPlaneMesh);
+        },
+        undefined,
+        () => {
+            console.warn("未找到 map_shilin.png，切換為深色網格地板。");
+            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
+            const planeMat = new THREE.MeshLambertMaterial({ color: 0x141820 });
+            groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
+            groundPlaneMesh.rotation.x = -Math.PI / 2;
+            groundPlaneMesh.position.set(mapWidth / 2, -0.02, mapDepth / 2);
+            scene.add(groundPlaneMesh);
+        }
+    );
 }
 
-// 3. 緊縮型電子圍欄線框
+// 2. 緊縮型電子圍欄線框
 function updateFenceVisual(scene, bounds) {
     if (fenceLineSegments) scene.remove(fenceLineSegments);
     const bw = bounds.xmax - bounds.xmin;
@@ -97,14 +90,20 @@ function updateFenceVisual(scene, bounds) {
     scene.add(fenceLineSegments);
 }
 
-// 4. 停機坪
+// 3. 精巧型停機坪
 function createHelipad(x, y, z, colorHex) {
     const padGroup = new THREE.Group();
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.06, 16), new THREE.MeshBasicMaterial({ color: colorHex }));
+    const pad = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.75, 0.75, 0.06, 16),
+        new THREE.MeshBasicMaterial({ color: colorHex })
+    );
     pad.position.set(x, y + 0.03, z);
     padGroup.add(pad);
 
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.85, 1.0, 20),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+    );
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(x, y + 0.04, z);
     padGroup.add(ring);
@@ -113,9 +112,10 @@ function createHelipad(x, y, z, colorHex) {
     return padGroup;
 }
 
-// 5. 萬種種子雜湊生成器 (0000~9999)
+// 4. 萬種種子雜湊生成器 (0000~9999 高離散度)
 function createSeededRandom(seedInt) {
     let s = Math.abs(seedInt) % 10000;
+    // 32-bit Murmur3 變體雜湊
     s = ((s ^ 0x6D2B79F5) * 0x85EBCA6B) >>> 0;
     s = ((s ^ (s >>> 13)) * 0xC2B2AE35) >>> 0;
     let state = (s ^ (s >>> 16)) >>> 0;
@@ -128,7 +128,7 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// 6. 載入並建構士林 3D 建築群 (帶外牆貼皮與高亮起訖樓)
+// 5. 載入並建構士林 3D 建築群 (高質感極簡石墨風格)
 async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
@@ -145,7 +145,11 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
             cachedRawGeoJSON = null;
         }
     }
-    if (!cachedRawGeoJSON || !cachedRawGeoJSON.features) return;
+
+    if (!cachedRawGeoJSON || !cachedRawGeoJSON.features || cachedRawGeoJSON.features.length === 0) {
+        console.error("無法載入 shilin.geojson！");
+        return null;
+    }
 
     const features = cachedRawGeoJSON.features;
     let minLon = Infinity, maxLon = -Infinity;
@@ -165,8 +169,13 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const centerLat = (minLat + maxLat) / 2;
     const mPerDegLat = 110800;
     const mPerDegLon = 111320 * Math.cos(centerLat * Math.PI / 180);
+
+    const realWidthMeters = (maxLon - minLon) * mPerDegLon;
+    const realDepthMeters = (maxLat - minLat) * mPerDegLat;
+    const aspectRatio = realWidthMeters / realDepthMeters;
+
     const MAP_WIDTH = 100.0;
-    const MAP_DEPTH = MAP_WIDTH / ((maxLon - minLon) * mPerDegLon / ((maxLat - minLat) * mPerDegLat));
+    const MAP_DEPTH = MAP_WIDTH / aspectRatio;
 
     const tempBuildings = [];
     features.forEach((f, idx) => {
@@ -197,12 +206,20 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
         });
     });
 
+    // 內縮 5.0 公尺的緊縮空域
     const INSET = 5.0;
-    GEOFENCE = { xmin: INSET, xmax: MAP_WIDTH - INSET, zmin: INSET, zmax: MAP_DEPTH - INSET, ymax: 25.0 };
+    GEOFENCE = {
+        xmin: INSET,
+        xmax: MAP_WIDTH - INSET,
+        zmin: INSET,
+        zmax: MAP_DEPTH - INSET,
+        ymax: 25.0
+    };
+
     updateFenceVisual(scene, GEOFENCE);
     updateGroundMap(scene, MAP_WIDTH, MAP_DEPTH);
 
-    // 任一建物皆可當起訖點
+    // ★ 全地圖建物皆可作為候選，不限面積與跨距
     let validIndices = [];
     tempBuildings.forEach((b, i) => {
         if (b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
@@ -212,6 +229,7 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     });
     if (validIndices.length < 2) validIndices = tempBuildings.map((_, i) => i);
 
+    // 隨機選出兩棟不同的建築物
     const pickA = Math.floor(rng() * validIndices.length);
     let pickB = Math.floor(rng() * (validIndices.length - 1));
     if (pickB >= pickA) pickB += 1;
@@ -219,7 +237,7 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const startIdx = validIndices[pickA];
     const goalIdx = validIndices[pickB];
 
-    // 生成實體幾何並上色 (頂底單色 + 側面科技窗格貼皮)
+    // 生成實體幾何
     tempBuildings.forEach((bData, idx) => {
         const extrudeSettings = { depth: bData.bh, bevelEnabled: false };
         const geom = new THREE.ExtrudeGeometry(bData.shape, extrudeSettings);
@@ -228,42 +246,47 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
         const isStart = (idx === startIdx);
         const isGoal = (idx === goalIdx);
 
-        let materials;
+        let mat;
         let edgeColor = 0x00d2ff;
+        let edgeOpacity = 0.45;
 
         if (isStart) {
-            // ★ 整棟綠色起點樓
-            const matG = new THREE.MeshLambertMaterial({ color: 0x00ff88 });
-            materials = [matG, matG];
+            // ★ 起點大樓整棟翡翠綠
+            mat = new THREE.MeshLambertMaterial({ color: 0x00ff88 });
             edgeColor = 0xffffff;
+            edgeOpacity = 0.9;
         } else if (isGoal) {
-            // ★ 整棟金色終點樓
-            const matY = new THREE.MeshLambertMaterial({ color: 0xffd700 });
-            materials = [matY, matY];
+            // ★ 終點大樓整棟流金黃
+            mat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
             edgeColor = 0xffffff;
+            edgeOpacity = 0.9;
         } else {
-            // ★ 一般建築：頂面深色 + 外牆科技窗格貼皮
-            const roofMat = new THREE.MeshLambertMaterial({ color: 0x1a212b });
-            const sideMat = new THREE.MeshLambertMaterial({ map: buildingTexture, color: 0xffffff });
-            materials = [roofMat, sideMat];
+            // ★ 一般建築：深邃高級石墨灰藍
+            mat = new THREE.MeshLambertMaterial({ color: 0x1e2430 });
         }
 
-        const mesh = new THREE.Mesh(geom, materials);
+        const mesh = new THREE.Mesh(geom, mat);
         mesh.position.y = bData.bh;
         cityGroup.add(mesh);
 
+        // 簡約科技感俐落線框
         const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(geom),
-            new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: isStart || isGoal ? 0.9 : 0.4 })
+            new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: edgeOpacity })
         );
         mesh.add(edges);
 
         buildings.push({
             xmin: bData.bMinX, xmax: bData.bMaxX,
             zmin: bData.bMinZ, zmax: bData.bMaxZ,
-            height: bData.bh, mesh: mesh,
-            cx: bData.cx, cz: bData.cz,
-            isStart, isGoal
+            height: bData.bh,
+            mesh: mesh,
+            cx: bData.cx,
+            cz: bData.cz,
+            width: bData.width,
+            depth: bData.depth,
+            isStart: isStart,
+            isGoal: isGoal
         });
     });
 
@@ -277,5 +300,12 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     createHelipad(goalB.cx, goalB.height, goalB.cz, 0xffd700);
 
     BASE_TOTAL_DIST = Math.hypot(GOAL_POS[0] - START_POS[0], GOAL_POS[1] - START_POS[1], GOAL_POS[2] - START_POS[2]);
+
+    const formattedSeed = String(seedValue).padStart(4, '0');
+    console.log(`種子 [${formattedSeed}] 起訖大樓已就位：`);
+    console.log(`- 起點大樓 (整棟綠色): (${START_POS.map(v => v.toFixed(1)).join(', ')}), 高度 ${startB.height.toFixed(1)}m`);
+    console.log(`- 終點大樓 (整棟黃色): (${GOAL_POS.map(v => v.toFixed(1)).join(', ')}), 高度 ${goalB.height.toFixed(1)}m`);
+    console.log(`- 航程直線跨距: ${BASE_TOTAL_DIST.toFixed(1)}m`);
+
     return { mapWidth: MAP_WIDTH, mapDepth: MAP_DEPTH };
 }
