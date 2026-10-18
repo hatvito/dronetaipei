@@ -1,5 +1,5 @@
 // =========================================================================
-// city.js - 明亮現代都市建築、世界座標窗格 UV 與起訖點配置
+// city.js - 明亮現代都市建築、12種風格隨機外觀貼皮與起訖點配置
 // =========================================================================
 
 let cityGroup = new THREE.Group();
@@ -18,25 +18,51 @@ let currentBaseD = 60.33;
 // 士林最佳精準對齊參數
 const calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
 
-// ------------------ 1. 現代大樓方塊窗戶無縫貼皮 (淡海校園風格) ------------------
-function createModernFacadeTexture() {
+// ------------------ 1. 12 種現代都市建築風格色彩庫 ------------------
+const BUILDING_STYLES = [
+    // 1. 現代極簡米白 (白牆 + 深藍灰窗 + 磚紅屋頂)
+    { wall: '#f1f5f9', line: '#cbd5e1', glass: '#1e293b', frame: '#475569', roof: 0x824438 },
+    // 2. 溫暖米砂色 (暖沙牆 + 墨黑窗 + 深褐屋頂)
+    { wall: '#f5efe6', line: '#dcd2c4', glass: '#292524', frame: '#57534e', roof: 0x6c4a38 },
+    // 3. 科技冷灰 (石材灰牆 + 冰藍窗 + 石墨黑屋頂)
+    { wall: '#e2e8f0', line: '#94a3b8', glass: '#0f172a', frame: '#334155', roof: 0x334155 },
+    // 4. 莫蘭迪青灰 (北歐灰綠牆 + 深邃窗 + 瀝青灰屋頂)
+    { wall: '#e0e7e9', line: '#b4c5c7', glass: '#162b32', frame: '#3b555e', roof: 0x384a52 },
+    // 5. 沉穩深灰石板 (深炭灰牆 + 鍍膜藍窗 + 灰黑屋頂)
+    { wall: '#cbd5e1', line: '#64748b', glass: '#090d16', frame: '#1e293b', roof: 0x1e293b },
+    // 6. 經典暖磚橘 (磚橘牆面 + 暗黑窗 + 磚紅屋頂)
+    { wall: '#faebe3', line: '#e8cbbe', glass: '#272021', frame: '#5c4d4f', roof: 0x994d3f },
+    // 7. 水泥清水模 (冷水泥灰 + 俐落黑窗 + 台灣公寓綠防水漆屋頂)
+    { wall: '#d8dee9', line: '#aeb9cc', glass: '#1a202c', frame: '#4a5568', roof: 0x3d6b52 },
+    // 8. 摩天大樓玻璃帷幕感 (亮白外框 + 大面積海藍窗 + 鋼鐵冷灰屋頂)
+    { wall: '#f8fafc', line: '#94a3b8', glass: '#0369a1', frame: '#0284c7', roof: 0x475569 },
+    // 9. 柔和象牙黃 (象牙白牆 + 深青窗 + 暖紅瓦屋頂)
+    { wall: '#fef3c7', line: '#fde68a', glass: '#1c1917', frame: '#78350f', roof: 0x854d0e },
+    // 10. 都會現代褐 (卡其灰褐 + 墨色窗 + 深咖啡屋頂)
+    { wall: '#e7e5e4', line: '#c7c2be', glass: '#292524', frame: '#44403c', roof: 0x573d32 },
+    // 11. 辦公商業大樓 (淺冷藍牆 + 鍍膜黑藍窗 + 石板黑屋頂)
+    { wall: '#e0f2fe', line: '#7dd3fc', glass: '#082f49', frame: '#0369a1', roof: 0x1e293b },
+    // 12. 簡約奶霜色 (暖灰白 + 墨綠黑窗 + 磚褐屋頂)
+    { wall: '#ecefe6', line: '#c6cdc0', glass: '#1b241e', frame: '#3f4f44', roof: 0x6e473b }
+];
+
+// 動態為特定風格繪製 256x256 窗格貼圖
+function generateStyleTexture(cfg) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
-    // 1. 米灰白色外牆基底 (乾淨現代外觀)
-    ctx.fillStyle = '#e5e8ec';
+    // 外牆底色
+    ctx.fillStyle = cfg.wall;
     ctx.fillRect(0, 0, 256, 256);
 
-    // 外牆水平與垂直分割溝縫
-    ctx.strokeStyle = '#c8ced6';
+    // 溝縫線
+    ctx.strokeStyle = cfg.line;
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, 256, 256);
 
-    // 2. 規律排列的方正落地大窗
-    const rows = 4;
-    const cols = 4;
+    const rows = 4, cols = 4;
     const cellW = 256 / cols;
     const cellH = 256 / rows;
 
@@ -48,25 +74,25 @@ function createModernFacadeTexture() {
             const h = cellH - 24;
 
             // 窗框
-            ctx.fillStyle = '#4a5568';
+            ctx.fillStyle = cfg.frame;
             ctx.fillRect(x, y, w, h);
 
-            // 玻璃主體 (深藍灰反光質感)
-            ctx.fillStyle = '#2b3648';
+            // 玻璃主體
+            ctx.fillStyle = cfg.glass;
             ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
 
-            // 玻璃高光反光條
+            // 玻璃對角反光光澤
             ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
             ctx.beginPath();
             ctx.moveTo(x + 2, y + 2);
-            ctx.lineTo(x + w * 0.6, y + 2);
-            ctx.lineTo(x + 2, y + h * 0.6);
+            ctx.lineTo(x + w * 0.65, y + 2);
+            ctx.lineTo(x + 2, y + h * 0.65);
             ctx.closePath();
             ctx.fill();
 
-            // 窗台微陰影
-            ctx.fillStyle = '#9aa5b5';
-            ctx.fillRect(x - 2, y + h, w + 4, 3);
+            // 窗台陰影
+            ctx.fillStyle = 'rgba(0,0,0,0.18)';
+            ctx.fillRect(x - 1, y + h, w + 2, 3);
         }
     }
 
@@ -76,23 +102,25 @@ function createModernFacadeTexture() {
     return tex;
 }
 
-const modernFacadeTex = createModernFacadeTexture();
+// 預先建構好 12 套材質組 (頂底屋頂 + 側面外牆)
+const PRECOMPILED_STYLES = BUILDING_STYLES.map(cfg => {
+    return {
+        roofMat: new THREE.MeshLambertMaterial({ color: cfg.roof }),
+        sideMat: new THREE.MeshLambertMaterial({ map: generateStyleTexture(cfg), color: 0xffffff })
+    };
+});
 
-// ------------------ 2. 世界座標 UV 修正函式 (徹底解決橫向拉扯) ------------------
+// ------------------ 2. 世界座標 UV 展開 (保證窗格方正無拉扯) ------------------
 function applyWorldSpaceUV(geometry) {
     const pos = geometry.attributes.position;
     const uvs = [];
-    const scaleFactor = 3.5; // 每 3.5 公尺循環一次大方窗
+    const scaleFactor = 3.5;
 
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
         const y = pos.getY(i);
         const z = pos.getZ(i);
-
-        // 利用空間坐標 (X+Z) 與高度 (Y) 進行展開映射，不再依賴頂點索引
-        const u = (x + z) / scaleFactor;
-        const v = y / scaleFactor;
-        uvs.push(u, v);
+        uvs.push((x + z) / scaleFactor, y / scaleFactor);
     }
 
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -118,10 +146,7 @@ function updateGroundMap(scene, mapWidth, mapDepth) {
             tex.wrapT = THREE.ClampToEdgeWrapping;
 
             const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-            const planeMat = new THREE.MeshLambertMaterial({
-                map: tex,
-                side: THREE.FrontSide
-            });
+            const planeMat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.FrontSide });
 
             groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
             groundPlaneMesh.rotation.x = -Math.PI / 2;
@@ -202,7 +227,7 @@ function createSeededRandom(seedInt) {
     };
 }
 
-// ------------------ 7. 載入並建構士林 3D 現代明亮建築群 ------------------
+// ------------------ 7. 載入並建構士林 3D 現代明亮建築群 (多元色彩版) ------------------
 async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
@@ -220,10 +245,7 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
         }
     }
 
-    if (!cachedRawGeoJSON || !cachedRawGeoJSON.features || cachedRawGeoJSON.features.length === 0) {
-        console.error("無法載入 shilin.geojson！");
-        return null;
-    }
+    if (!cachedRawGeoJSON || !cachedRawGeoJSON.features) return null;
 
     const features = cachedRawGeoJSON.features;
     let minLon = Infinity, maxLon = -Infinity;
@@ -286,7 +308,7 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     updateFenceVisual(scene, GEOFENCE);
     updateGroundMap(scene, MAP_WIDTH, MAP_DEPTH);
 
-    // 全地圖皆可為候選大樓
+    // 全地圖建築候選
     let validIndices = [];
     tempBuildings.forEach((b, i) => {
         if (b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
@@ -303,18 +325,15 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const startIdx = validIndices[pickA];
     const goalIdx = validIndices[pickB];
 
-    // 材質快取 (共用材質提高效能)
-    const normalRoofMat = new THREE.MeshLambertMaterial({ color: 0x824438 }); // 淡海風格磚紅女兒牆頂面
-    const normalSideMat = new THREE.MeshLambertMaterial({ map: modernFacadeTex, color: 0xffffff });
-    const startMat = new THREE.MeshLambertMaterial({ color: 0x10b981 });     // 翡翠綠起點
-    const goalMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });      // 暖金黃終點
+    // 起訖大樓專屬醒目材質
+    const startMat = new THREE.MeshLambertMaterial({ color: 0x10b981 }); // 翡翠綠
+    const goalMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });  // 耀眼金黃
 
     tempBuildings.forEach((bData, idx) => {
         const extrudeSettings = { depth: bData.bh, bevelEnabled: false };
         const geom = new THREE.ExtrudeGeometry(bData.shape, extrudeSettings);
         geom.rotateX(Math.PI / 2);
 
-        // ★ 套用世界座標 UV 展開，窗戶永遠方正不被拉扁
         applyWorldSpaceUV(geom);
 
         const isStart = (idx === startIdx);
@@ -322,26 +341,29 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
 
         let materials;
         let edgeColor = '#94a3b8';
-        let edgeOpacity = 0.35;
+        let edgeOpacity = 0.3;
 
         if (isStart) {
             materials = [startMat, startMat];
             edgeColor = '#ffffff';
-            edgeOpacity = 0.8;
+            edgeOpacity = 0.9;
         } else if (isGoal) {
             materials = [goalMat, goalMat];
             edgeColor = '#ffffff';
-            edgeOpacity = 0.8;
+            edgeOpacity = 0.9;
         } else {
-            // [頂底材質: 磚紅屋頂, 側面材質: 方格窗戶貼皮]
-            materials = [normalRoofMat, normalSideMat];
+            // ★ 核心改進：依大樓空間位置與序號，均勻散佈 12 種風格配色
+            const styleIdx = Math.floor((Math.abs(Math.sin(idx * 12.9898 + bData.cx * 78.233)) * PRECOMPILED_STYLES.length)) % PRECOMPILED_STYLES.length;
+            const chosen = PRECOMPILED_STYLES[styleIdx];
+            
+            // 使用 clone 確保獨立實例，防全場連鎖變色
+            materials = [chosen.roofMat.clone(), chosen.sideMat.clone()];
         }
 
         const mesh = new THREE.Mesh(geom, materials);
         mesh.position.y = bData.bh;
         cityGroup.add(mesh);
 
-        // 建築柔和邊界線條
         const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(geom),
             new THREE.LineBasicMaterial({ color: new THREE.Color(edgeColor), transparent: true, opacity: edgeOpacity })
