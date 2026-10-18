@@ -1,5 +1,5 @@
 // =========================================================================
-// app.js - 主入口、明亮日光 3D 視圖、視角跟隨與事件綁定 (淡海風格)
+// app.js - 主入口、明亮日光 3D 視圖、視角跟隨、AI 提示詞彈窗與事件綁定 (完整版)
 // =========================================================================
 
 const DEFAULT_CONTROLLER_CODE = `// 無人機自主避障控制器
@@ -75,7 +75,7 @@ class StudentController {
     }
 }`;
 
-// 程式碼編輯器初始化
+// 程式碼編輯器初始化與暫存
 const codeTextarea = document.getElementById('controller-code');
 let savedCode = "";
 try { savedCode = localStorage.getItem('drone_student_code') || ""; } catch (e) {}
@@ -92,11 +92,11 @@ codeTextarea.addEventListener('input', () => {
     }
 });
 
-// ------------------ 3D 視圖初始化 (淡海校園晴朗日光風格) ------------------
+// ------------------ 3D 視圖初始化 ------------------
 const viewer = document.getElementById('viewer');
 const scene = new THREE.Scene();
 
-// 晴朗微霧天空底色 (不再是死黑)
+// 晴朗微霧天空底色
 scene.background = new THREE.Color(0xdce5ed);
 scene.fog = new THREE.FogExp2(0xdce5ed, 0.0035);
 scene.add(cityGroup);
@@ -118,18 +118,18 @@ controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
 // 晴空白晝光照系統
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xcfd6df, 0.85); // 上方白天亮光，下方微冷補光
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xcfd6df, 0.85);
 hemiLight.position.set(0, 150, 0);
 scene.add(hemiLight);
 
-const sunLight = new THREE.DirectionalLight(0xfffaed, 0.95); // 溫暖斜向自然日光
+const sunLight = new THREE.DirectionalLight(0xfffaed, 0.95);
 sunLight.position.set(60, 130, 40);
 scene.add(sunLight);
 
 // 無人機本體與紅色航跡線
 const droneMesh = new THREE.Mesh(
     new THREE.SphereGeometry(DRONE_RADIUS, 16, 16),
-    new THREE.MeshLambertMaterial({ color: 0xef4444 }) // 亮紅色穿越機，醒目易見
+    new THREE.MeshLambertMaterial({ color: 0xef4444 })
 );
 scene.add(droneMesh);
 
@@ -220,12 +220,55 @@ async function resetScene() {
     updateScoreboard(START_POS, "待命出發");
 }
 
-// 事件綁定
+// ------------------ 事件綁定 (種子、AI提示詞、日誌) ------------------
 document.getElementById('random-seed-btn')?.addEventListener('click', () => {
     document.getElementById('seed-input').value = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
     resetScene();
 });
 document.getElementById('apply-seed-btn')?.addEventListener('click', resetScene);
+
+// AI 提示詞彈出視窗事件綁定
+const promptModal = document.getElementById('prompt-modal');
+const openPromptBtn = document.getElementById('open-prompt-modal-btn');
+const quickPromptBtn = document.getElementById('quick-prompt-btn');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const copyPromptBtn = document.getElementById('copy-prompt-btn');
+
+if (openPromptBtn && promptModal) {
+    openPromptBtn.addEventListener('click', () => {
+        promptModal.style.display = 'flex';
+    });
+}
+
+if (quickPromptBtn && promptModal) {
+    quickPromptBtn.addEventListener('click', () => {
+        promptModal.style.display = 'flex';
+    });
+}
+
+if (closeModalBtn && promptModal) {
+    closeModalBtn.addEventListener('click', () => {
+        promptModal.style.display = 'none';
+    });
+}
+
+window.addEventListener('click', (e) => {
+    if (e.target === promptModal) {
+        promptModal.style.display = 'none';
+    }
+});
+
+if (copyPromptBtn) {
+    copyPromptBtn.addEventListener('click', () => {
+        const txt = document.getElementById('prompt-text');
+        if (txt) {
+            navigator.clipboard.writeText(txt.innerText).then(() => {
+                copyPromptBtn.innerText = "✅ 提示詞已複製！";
+                setTimeout(() => { copyPromptBtn.innerText = "📋 複製提示詞"; }, 2000);
+            });
+        }
+    });
+}
 
 // 模擬試飛啟動
 document.getElementById('run-btn')?.addEventListener('click', async () => {
@@ -275,7 +318,7 @@ document.getElementById('run-btn')?.addEventListener('click', async () => {
 
         activeVelocity = vel;
         const nextPos = [currentPos[0] + vel[0] * dt, currentPos[1] + vel[1] * dt, currentPos[2] + vel[2] * dt];
-        const collision = checkContinuousPath(currentPos, nextPos);
+        const collision = checkContinuousPath(currentPos, nextPos, true);
 
         if (collision.hit) {
             clearInterval(simInterval);
