@@ -1,5 +1,5 @@
 // =========================================================================
-// city.js - 明亮現代都市建築、12種風格隨機外觀貼皮與起訖點配置 (修正起訖點沉地)
+// city.js - 整合 3d.html 台灣特色高擬真街廓、鐵皮水塔屋頂與起訖點配置
 // =========================================================================
 
 let cityGroup = new THREE.Group();
@@ -7,152 +7,148 @@ let buildings = [];
 let START_POS = [10, 8.25, 10];
 let GOAL_POS = [85, 16.25, 40];
 let BASE_TOTAL_DIST = 100.0;
-let GEOFENCE = { xmin: 5.0, xmax: 95.0, zmin: 5.0, zmax: 55.0, ymax: 25.0 };
-let cachedRawGeoJSON = null;
+let GEOFENCE = { xmin: 5.0, xmax: 95.0, zmin: 5.0, zmax: 48.0, ymax: 25.0 };
 let groundPlaneMesh = null;
 let fenceLineSegments = null;
 
-let currentBaseW = 100.0;
-let currentBaseD = 60.33;
+// 尺度轉換常數 (3d.html 1024x534 -> 無人機賽事 100x52.15 公尺)
+const SRC_W = 1024.0;
+const SRC_H = 534.0;
+const MAP_WIDTH = 100.0;
+const MAP_DEPTH = (SRC_H / SRC_W) * MAP_WIDTH; // 52.148m
+const SCALE_FACTOR = MAP_WIDTH / SRC_W;        // 0.097656
 
-const calibData = { scale: 0.995, scaleZ: 1.020, offsetX: -1.20, offsetZ: -3.90 };
+// 坐標換算函式：將 3d.html 的 (u, v) 直接轉為 3D 世界坐標 (X, Z)
+const toWorldX = (u) => u * SCALE_FACTOR;
+const toWorldZ = (v) => v * SCALE_FACTOR;
 
-// 1. 12 種現代都市建築風格色彩庫
-const BUILDING_STYLES = [
-    { wall: '#f1f5f9', line: '#cbd5e1', glass: '#1e293b', frame: '#475569', roof: 0x824438 },
-    { wall: '#f5efe6', line: '#dcd2c4', glass: '#292524', frame: '#57534e', roof: 0x6c4a38 },
-    { wall: '#e2e8f0', line: '#94a3b8', glass: '#0f172a', frame: '#334155', roof: 0x334155 },
-    { wall: '#e0e7e9', line: '#b4c5c7', glass: '#162b32', frame: '#3b555e', roof: 0x384a52 },
-    { wall: '#cbd5e1', line: '#64748b', glass: '#090d16', frame: '#1e293b', roof: 0x1e293b },
-    { wall: '#faebe3', line: '#e8cbbe', glass: '#272021', frame: '#5c4d4f', roof: 0x994d3f },
-    { wall: '#d8dee9', line: '#aeb9cc', glass: '#1a202c', frame: '#4a5568', roof: 0x3d6b52 },
-    { wall: '#f8fafc', line: '#94a3b8', glass: '#0369a1', frame: '#0284c7', roof: 0x475569 },
-    { wall: '#fef3c7', line: '#fde68a', glass: '#1c1917', frame: '#78350f', roof: 0x854d0e },
-    { wall: '#e7e5e4', line: '#c7c2be', glass: '#292524', frame: '#44403c', roof: 0x573d32 },
-    { wall: '#e0f2fe', line: '#7dd3fc', glass: '#082f49', frame: '#0369a1', roof: 0x1e293b },
-    { wall: '#ecefe6', line: '#c6cdc0', glass: '#1b241e', frame: '#3f4f44', roof: 0x6e473b }
-];
+let rngSeed = 1337;
+function seededRandom() {
+    rngSeed = (rngSeed * 16807) % 2147483647;
+    return (rngSeed - 1) / 2147483646;
+}
+function randRange(min, max) {
+    return min + seededRandom() * (max - min);
+}
 
-function generateStyleTexture(cfg) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
+// ------------------ 1. 3d.html 台灣特色立面材質與鐵皮材質庫 ------------------
+const facadeMaterials = {};
+const roofMaterials = {};
 
-    ctx.fillStyle = cfg.wall;
-    ctx.fillRect(0, 0, 256, 256);
+function initRichFacadeAndRoofMaterials() {
+    function makeFacadeTexture(opts) {
+        const c = document.createElement('canvas');
+        c.width = 128;
+        c.height = 128;
+        const ctx = c.getContext('2d');
 
-    ctx.strokeStyle = cfg.line;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, 256, 256);
+        ctx.fillStyle = opts.bg;
+        ctx.fillRect(0, 0, 128, 128);
 
-    const rows = 4, cols = 4;
-    const cellW = 256 / cols;
-    const cellH = 256 / rows;
-
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const x = c * cellW + 10;
-            const y = r * cellH + 12;
-            const w = cellW - 20;
-            const h = cellH - 24;
-
-            ctx.fillStyle = cfg.frame;
-            ctx.fillRect(x, y, w, h);
-
-            ctx.fillStyle = cfg.glass;
-            ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-            ctx.beginPath();
-            ctx.moveTo(x + 2, y + 2);
-            ctx.lineTo(x + w * 0.65, y + 2);
-            ctx.lineTo(x + 2, y + h * 0.65);
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.fillStyle = 'rgba(0,0,0,0.18)';
-            ctx.fillRect(x - 1, y + h, w + 2, 3);
+        if (opts.tileLines) {
+            ctx.fillStyle = 'rgba(0,0,0,0.06)';
+            for (let y = 0; y < 128; y += 4) ctx.fillRect(0, y, 128, 1);
         }
+
+        const cellW = 128 / opts.cols;
+        const cellH = 128 / opts.rows;
+
+        for (let r = 0; r < opts.rows; r++) {
+            ctx.fillStyle = opts.ledgeColor || 'rgba(0,0,0,0.16)';
+            ctx.fillRect(0, r * cellH, 128, 2.5);
+
+            for (let col = 0; col < opts.cols; col++) {
+                const padX = cellW * (opts.padX || 0.16);
+                const padY = cellH * (opts.padY || 0.22);
+                const wx = col * cellW + padX;
+                const wy = r * cellH + padY;
+                const ww = cellW - padX * 2;
+                const wh = cellH - padY * 2;
+
+                ctx.fillStyle = opts.win;
+                ctx.fillRect(wx, wy, ww, wh);
+
+                if (opts.ironBars && (r + col) % 2 === 0) {
+                    ctx.strokeStyle = 'rgba(30,41,59,0.45)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(wx - 1, wy - 1, ww + 2, wh + 2);
+                }
+                if (opts.balcony) {
+                    ctx.fillStyle = opts.balconyColor || 'rgba(51,65,85,0.38)';
+                    ctx.fillRect(col * cellW + 3, (r + 0.62) * cellH, cellW - 6, cellH * 0.28);
+                }
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        return tex;
     }
 
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
+    facadeMaterials.oldGreyStone = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#cec8be', win: '#334155', rows: 5, cols: 4, balcony: true, ironBars: true }),
+        roughness: 0.85
+    });
+    facadeMaterials.oldWarmTile = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#dfd3c3', win: '#1e293b', rows: 5, cols: 4, balcony: true, ironBars: true, tileLines: true }),
+        roughness: 0.8
+    });
+    facadeMaterials.pinkCeramic = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#d9beb8', win: '#334155', rows: 6, cols: 4, balcony: true, tileLines: true }),
+        roughness: 0.75
+    });
+    facadeMaterials.redBrick = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#b87d6b', win: '#1e293b', rows: 5, cols: 4, balcony: true, tileLines: true }),
+        roughness: 0.82
+    });
+    facadeMaterials.greenMosaic = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#b8cbbd', win: '#1e293b', rows: 5, cols: 4, balcony: true, ironBars: true }),
+        roughness: 0.82
+    });
+    facadeMaterials.midriseMansion = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#cbd5e1', win: '#0f172a', rows: 8, cols: 5, balcony: true, tileLines: true }),
+        roughness: 0.5
+    });
+    facadeMaterials.highriseLuxury = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#94a3b8', win: '#0f172a', rows: 12, cols: 6 }),
+        roughness: 0.3
+    });
+    facadeMaterials.glassTower = new THREE.MeshStandardMaterial({
+        map: makeFacadeTexture({ bg: '#60a5fa', win: '#091526', rows: 14, cols: 8 }),
+        roughness: 0.2
+    });
+
+    roofMaterials.concrete = new THREE.MeshStandardMaterial({ color: 0xb8b4ac, roughness: 0.9 });
+    roofMaterials.darkConcrete = new THREE.MeshStandardMaterial({ color: 0x8c8881, roughness: 0.92 });
+    roofMaterials.tinGreen = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.6 });
+    roofMaterials.tinDarkGreen = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.6 });
+    roofMaterials.tinBlue = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.6 });
+    roofMaterials.tinRed = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.6 });
 }
+initRichFacadeAndRoofMaterials();
 
-const PRECOMPILED_STYLES = BUILDING_STYLES.map(cfg => {
-    return {
-        roofMat: new THREE.MeshLambertMaterial({ color: cfg.roof }),
-        sideMat: new THREE.MeshLambertMaterial({ map: generateStyleTexture(cfg), color: 0xffffff })
-    };
-});
+const FACADE_KEYS = ['oldGreyStone', 'oldWarmTile', 'pinkCeramic', 'redBrick', 'greenMosaic', 'midriseMansion'];
+const ROOF_TIN_KEYS = ['tinGreen', 'tinDarkGreen', 'tinBlue', 'tinRed'];
 
-// 2. 世界座標 UV 展開
-function applyWorldSpaceUV(geometry) {
-    const pos = geometry.attributes.position;
-    const uvs = [];
-    const scaleFactor = 3.5;
-
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        const z = pos.getZ(i);
-        uvs.push((x + z) / scaleFactor, y / scaleFactor);
-    }
-
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.attributes.uv.needsUpdate = true;
-}
-
-// 3. 鋪設士林衛星底圖
-function updateGroundMap(scene, mapWidth, mapDepth) {
-    currentBaseW = mapWidth;
-    currentBaseD = mapDepth;
-
-    if (groundPlaneMesh) {
-        scene.remove(groundPlaneMesh);
-        if (groundPlaneMesh.geometry) groundPlaneMesh.geometry.dispose();
-        groundPlaneMesh = null;
-    }
+// ------------------ 2. 鋪設底圖與緊縮圍欄 ------------------
+function updateGroundMap(scene) {
+    if (groundPlaneMesh) scene.remove(groundPlaneMesh);
 
     const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(
-        'map_shilin.png',
-        (tex) => {
-            tex.wrapS = THREE.ClampToEdgeWrapping;
-            tex.wrapT = THREE.ClampToEdgeWrapping;
+    textureLoader.load('map_shilin.png', (tex) => {
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
 
-            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-            const planeMat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.FrontSide });
-
-            groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
-            groundPlaneMesh.rotation.x = -Math.PI / 2;
-
-            const sx = calibData.scale;
-            const sz = calibData.scale * (calibData.scaleZ || 1.0);
-            groundPlaneMesh.scale.set(sx, sz, 1.0);
-
-            const cx = (currentBaseW / 2) + calibData.offsetX;
-            const cz = (currentBaseD / 2) + calibData.offsetZ;
-            groundPlaneMesh.position.set(cx, -0.01, cz);
-
-            scene.add(groundPlaneMesh);
-        },
-        undefined,
-        () => {
-            const planeGeo = new THREE.PlaneGeometry(mapWidth, mapDepth);
-            const planeMat = new THREE.MeshLambertMaterial({ color: 0xd8dde4 });
-            groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
-            groundPlaneMesh.rotation.x = -Math.PI / 2;
-            groundPlaneMesh.position.set(mapWidth / 2, -0.02, mapDepth / 2);
-            scene.add(groundPlaneMesh);
-        }
-    );
+        const planeGeo = new THREE.PlaneGeometry(MAP_WIDTH, MAP_DEPTH);
+        const planeMat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.FrontSide });
+        groundPlaneMesh = new THREE.Mesh(planeGeo, planeMat);
+        groundPlaneMesh.rotation.x = -Math.PI / 2;
+        groundPlaneMesh.position.set(MAP_WIDTH / 2, -0.01, MAP_DEPTH / 2);
+        scene.add(groundPlaneMesh);
+    });
 }
 
-// 4. 緊縮型電子圍欄線框
 function updateFenceVisual(scene, bounds) {
     if (fenceLineSegments) scene.remove(fenceLineSegments);
     const bw = bounds.xmax - bounds.xmin;
@@ -169,7 +165,6 @@ function updateFenceVisual(scene, bounds) {
     scene.add(fenceLineSegments);
 }
 
-// 5. 停機坪
 function createHelipad(x, y, z, colorHex) {
     const padGroup = new THREE.Group();
     const pad = new THREE.Mesh(
@@ -191,116 +186,121 @@ function createHelipad(x, y, z, colorHex) {
     return padGroup;
 }
 
-// 6. 萬種種子雜湊生成器 (0000~9999)
-function createSeededRandom(seedInt) {
-    let s = Math.abs(seedInt) % 10000;
-    s = ((s ^ 0x6D2B79F5) * 0x85EBCA6B) >>> 0;
-    s = ((s ^ (s >>> 13)) * 0xC2B2AE35) >>> 0;
-    let state = (s ^ (s >>> 16)) >>> 0;
-    return function() {
-        state = (state + 0x9E3779B9) >>> 0;
-        let z = state;
-        z = ((z ^ (z >>> 16)) * 0x85EBCA6B) >>> 0;
-        z = ((z ^ (z >>> 13)) * 0xC2B2AE35) >>> 0;
-        return ((z ^ (z >>> 16)) >>> 0) / 4294967296;
-    };
+// ------------------ 3. 3d.html 建築生成演算法 (帶物理 Hitbox 登記) ------------------
+const rawBuildingDescriptors = [];
+
+function registerRawBuilding(u, v, w, d, h, rotRad, opts = {}) {
+    rawBuildingDescriptors.push({ u, v, w, d, h, rotRad, opts });
 }
 
-// 7. 載入並建構士林 3D 現代明亮建築群 (徹底防止起訖點壓地)
+function buildTaiwanStreetBlock(topUVs, botUVs, opts = {}) {
+    const topPts = topUVs.map(p => new THREE.Vector2(p[0], p[1]));
+    const botPts = botUVs.map(p => new THREE.Vector2(p[0], p[1]));
+
+    const cols = opts.cols || 8;
+    for (let c = 0; c < cols; c++) {
+        const tStart = c / cols;
+        const tEnd = (c + 1) / cols;
+        const tMid = (tStart + tEnd) / 2;
+
+        const pTop = new THREE.Vector2().lerpVectors(topPts[0], topPts[topPts.length - 1], tMid);
+        const pBot = new THREE.Vector2().lerpVectors(botPts[0], botPts[botPts.length - 1], tMid);
+
+        const dx = (topPts[topPts.length - 1].x - topPts[0].x) / cols;
+        const dz = (topPts[topPts.length - 1].y - topPts[0].y) / cols;
+        const rot = -Math.atan2(dz, dx);
+
+        const blockW = Math.hypot(dx, dz) * 0.88;
+        const totalD = pTop.distanceTo(pBot);
+
+        // 高度縮放轉換至 25m 限高範圍內
+        let rawH = opts.zone === 'luxury_highrise' ? randRange(14, 23) : (opts.zone === 'avenue_commercial' ? randRange(10, 20) : randRange(6.5, 15.5));
+
+        if (opts.doubleRow && totalD > 12) {
+            const eachD = (totalD - 2.5) / 2;
+            const u1 = pTop.x + (pBot.x - pTop.x) * 0.25;
+            const v1 = pTop.y + (pBot.y - pTop.y) * 0.25;
+            const u2 = pBot.x + (pTop.x - pBot.x) * 0.25;
+            const v2 = pBot.y + (pTop.y - pBot.y) * 0.25;
+
+            registerRawBuilding(u1, v1, blockW, eachD * 0.85, rawH, rot, { zone: opts.zone, name: opts.name });
+            registerRawBuilding(u2, v2, blockW, eachD * 0.85, rawH * randRange(0.85, 1.15), rot, { zone: opts.zone, name: opts.name });
+        } else {
+            const uMid = (pTop.x + pBot.x) / 2;
+            const vMid = (pTop.y + pBot.y) / 2;
+            registerRawBuilding(uMid, vMid, blockW, totalD * 0.8, rawH, rot, { zone: opts.zone, name: opts.name });
+        }
+    }
+}
+
+// 初始化 3d.html 街廓結構佈局
+function generateCityLayout() {
+    rawBuildingDescriptors.length = 0;
+    rngSeed = 1337;
+
+    // 核心地標
+    registerRawBuilding(374, 76, 42, 38, 24.0, 0.08, { isLandmark: true, name: '金仁寶總部主樓' });
+    registerRawBuilding(515, 76, 75, 45, 19.5, 0.06, { isLandmark: true, name: 'NVIDIA 基地' });
+    registerRawBuilding(184, 108, 38, 48, 23.5, 0, { isLandmark: true, name: '中鼎第二總部' });
+    registerRawBuilding(644, 55, 45, 36, 17.5, 0, { isLandmark: true, name: '高等行政法院' });
+    registerRawBuilding(740, 385, 52, 45, 23.5, 0.14, { isLandmark: true, name: '新光醫院主醫療大樓' });
+    registerRawBuilding(538, 355, 42, 42, 19.0, 0, { isLandmark: true, name: '科教館' });
+    registerRawBuilding(635, 345, 36, 36, 16.5, 0, { isLandmark: true, name: '天文館' });
+
+    // 文林路 615~681 巷
+    buildTaiwanStreetBlock([[775, 8], [888, 18]], [[762, 42], [884, 34]], { cols: 11, doubleRow: true, zone: 'old_walkup', name: '文林路681巷' });
+    buildTaiwanStreetBlock([[760, 48], [886, 42]], [[756, 80], [890, 58]], { cols: 12, doubleRow: true, zone: 'old_walkup', name: '文昌國小北巷' });
+    buildTaiwanStreetBlock([[762, 88], [894, 66]], [[770, 108], [898, 88]], { cols: 11, doubleRow: true, zone: 'old_walkup', name: '文昌國小東側' });
+    buildTaiwanStreetBlock([[818, 104], [902, 95]], [[824, 130], [908, 120]], { cols: 9, doubleRow: true, zone: 'old_walkup', name: '文林路643巷' });
+
+    // 美崙街、文昌路
+    buildTaiwanStreetBlock([[760, 196], [945, 196]], [[762, 216], [952, 226]], { cols: 15, doubleRow: true, zone: 'old_walkup', name: '文林路587巷' });
+    buildTaiwanStreetBlock([[766, 226], [958, 236]], [[772, 258], [962, 252]], { cols: 16, doubleRow: true, zone: 'old_walkup', name: '下樹林街廓' });
+    buildTaiwanStreetBlock([[784, 302], [972, 275]], [[788, 328], [976, 296]], { cols: 16, doubleRow: true, zone: 'old_walkup', name: '美崙街南側' });
+    buildTaiwanStreetBlock([[802, 402], [986, 368]], [[808, 428], [990, 394]], { cols: 16, doubleRow: true, zone: 'mixed_alley', name: '華光街南段' });
+    buildTaiwanStreetBlock([[812, 434], [995, 400]], [[822, 472], [1005, 430]], { cols: 14, doubleRow: true, zone: 'avenue_commercial', name: '中正路商辦' });
+
+    // 基河路 396 巷豪宅群
+    buildTaiwanStreetBlock([[548, 402], [618, 396]], [[558, 434], [630, 390]], { cols: 7, doubleRow: true, zone: 'luxury_highrise', name: '基河路396巷北' });
+    buildTaiwanStreetBlock([[554, 444], [638, 398]], [[574, 480], [662, 430]], { cols: 8, doubleRow: true, zone: 'luxury_highrise', name: '基河路396巷南' });
+    buildTaiwanStreetBlock([[578, 488], [668, 438]], [[602, 522], [692, 470]], { cols: 8, doubleRow: true, zone: 'luxury_highrise', name: '基河路300巷' });
+
+    // 北士科洲美廠辦
+    buildTaiwanStreetBlock([[62, 28], [150, 28]], [[62, 68], [150, 68]], { cols: 6, doubleRow: true, zone: 'avenue_commercial', name: '福國路廠辦' });
+    buildTaiwanStreetBlock([[62, 156], [150, 156]], [[62, 255], [150, 232]], { cols: 6, doubleRow: true, zone: 'luxury_highrise', name: '福善路科技樓' });
+}
+generateCityLayout();
+
+// ------------------ 4. 載入並建構真實都市建築群 ------------------
 async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     while (cityGroup.children.length > 0) {
         cityGroup.remove(cityGroup.children[0]);
     }
     buildings = [];
 
-    const rng = createSeededRandom(seedValue);
+    // 偽隨機種子雜湊 (0000~9999)
+    let s = (Math.abs(seedValue) % 10000) ^ 0x6D2B79F5;
+    const rng = () => {
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+    };
 
-    if (!cachedRawGeoJSON) {
-        try {
-            const resp = await fetch('shilin.geojson');
-            if (resp.ok) cachedRawGeoJSON = await resp.json();
-        } catch (e) {
-            cachedRawGeoJSON = null;
-        }
-    }
-
-    if (!cachedRawGeoJSON || !cachedRawGeoJSON.features) return null;
-
-    const features = cachedRawGeoJSON.features;
-    let minLon = Infinity, maxLon = -Infinity;
-    let minLat = Infinity, maxLat = -Infinity;
-
-    features.forEach(f => {
-        if (!f.geometry || !f.geometry.coordinates) return;
-        const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : 
-                       (f.geometry.coordinates[0] ? f.geometry.coordinates[0][0] : null);
-        if (!coords) return;
-        coords.forEach(([lon, lat]) => {
-            minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
-            minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
-        });
-    });
-
-    const centerLat = (minLat + maxLat) / 2;
-    const mPerDegLat = 110800;
-    const mPerDegLon = 111320 * Math.cos(centerLat * Math.PI / 180);
-
-    const realWidthMeters = (maxLon - minLon) * mPerDegLon;
-    const realDepthMeters = (maxLat - minLat) * mPerDegLat;
-    const aspectRatio = realWidthMeters / realDepthMeters;
-
-    const MAP_WIDTH = 100.0;
-    const MAP_DEPTH = MAP_WIDTH / aspectRatio;
-
-    const tempBuildings = [];
-    features.forEach((f, idx) => {
-        if (!f.geometry || !f.geometry.coordinates) return;
-        const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : 
-                       (f.geometry.coordinates[0] ? f.geometry.coordinates[0][0] : null);
-        if (!coords || coords.length < 3) return;
-
-        const shape = new THREE.Shape();
-        let bMinX = Infinity, bMaxX = -Infinity;
-        let bMinZ = Infinity, bMaxZ = -Infinity;
-
-        coords.forEach(([lon, lat], i) => {
-            const x = ((lon - minLon) / (maxLon - minLon)) * MAP_WIDTH;
-            const z = ((maxLat - lat) / (maxLat - minLat)) * MAP_DEPTH;
-            bMinX = Math.min(bMinX, x); bMaxX = Math.max(bMaxX, x);
-            bMinZ = Math.min(bMinZ, z); bMaxZ = Math.max(bMaxZ, z);
-            if (i === 0) shape.moveTo(x, z); else shape.lineTo(x, z);
-        });
-
-        // 確保每棟建築物都有足夠高度（最低 5.5 米）
-        let rawH = parseFloat(f.properties?.height || (f.properties?.['building:levels'] ? f.properties['building:levels'] * 3.2 : null));
-        let bh = rawH ? Math.min(23.0, Math.max(5.5, rawH * 0.45)) : (6.5 + ((idx * 7) % 15));
-
-        tempBuildings.push({
-            shape, bh, bMinX, bMaxX, bMinZ, bMaxZ,
-            cx: (bMinX + bMaxX) / 2, cz: (bMinZ + bMaxZ) / 2,
-            width: bMaxX - bMinX, depth: bMaxZ - bMinZ
-        });
-    });
-
+    // 電子圍欄（向內收縮 5 公尺）
     const INSET = 5.0;
     GEOFENCE = { xmin: INSET, xmax: MAP_WIDTH - INSET, zmin: INSET, zmax: MAP_DEPTH - INSET, ymax: 25.0 };
-
     updateFenceVisual(scene, GEOFENCE);
-    updateGroundMap(scene, MAP_WIDTH, MAP_DEPTH);
+    updateGroundMap(scene);
 
-    // ★ 關鍵修復：嚴格限定只有「真實有高度（bh >= 5.0）且在圍欄內」的建築物才進入候選池
-    let validIndices = [];
-    tempBuildings.forEach((b, i) => {
-        if (b.bh >= 5.0 &&
-            b.cx >= GEOFENCE.xmin + 0.5 && b.cx <= GEOFENCE.xmax - 0.5 &&
-            b.cz >= GEOFENCE.zmin + 0.5 && b.cz <= GEOFENCE.zmax - 0.5) {
-            validIndices.push(i);
+    // 篩選落入圍欄內的合法起訖建築候選
+    const validIndices = [];
+    rawBuildingDescriptors.forEach((b, idx) => {
+        const wx = toWorldX(b.u);
+        const wz = toWorldZ(b.v);
+        if (wx >= GEOFENCE.xmin + 1.0 && wx <= GEOFENCE.xmax - 1.0 &&
+            wz >= GEOFENCE.zmin + 1.0 && wz <= GEOFENCE.zmax - 1.0 && b.h >= 5.0) {
+            validIndices.push(idx);
         }
     });
-
-    if (validIndices.length < 2) {
-        validIndices = tempBuildings.map((_, i) => i);
-    }
 
     const pickA = Math.floor(rng() * validIndices.length);
     let pickB = Math.floor(rng() * (validIndices.length - 1));
@@ -312,68 +312,74 @@ async function loadRealCityBuildings(scene, seedValue, droneRadius) {
     const startMat = new THREE.MeshLambertMaterial({ color: 0x10b981 });
     const goalMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
 
-    tempBuildings.forEach((bData, idx) => {
-        const extrudeSettings = { depth: bData.bh, bevelEnabled: false };
-        const geom = new THREE.ExtrudeGeometry(bData.shape, extrudeSettings);
-        geom.rotateX(Math.PI / 2);
-
-        applyWorldSpaceUV(geom);
+    rawBuildingDescriptors.forEach((b, idx) => {
+        const wx = toWorldX(b.u);
+        const wz = toWorldZ(b.v);
+        const ww = b.w * SCALE_FACTOR;
+        const wd = b.d * SCALE_FACTOR;
+        const wh = b.h;
 
         const isStart = (idx === startIdx);
         const isGoal = (idx === goalIdx);
 
         let materials;
-        let edgeColor = '#94a3b8';
-        let edgeOpacity = 0.3;
-
         if (isStart) {
-            // ★ 起點大樓整棟翡翠綠
-            materials = [startMat, startMat];
-            edgeColor = '#ffffff';
-            edgeOpacity = 0.9;
+            materials = [startMat, startMat, startMat, startMat, startMat, startMat];
         } else if (isGoal) {
-            // ★ 終點大樓整棟流金黃 (整棟實體大樓浮現，絕不沉入地底)
-            materials = [goalMat, goalMat];
-            edgeColor = '#ffffff';
-            edgeOpacity = 0.9;
+            materials = [goalMat, goalMat, goalMat, goalMat, goalMat, goalMat];
         } else {
-            const styleIdx = Math.floor((Math.abs(Math.sin(idx * 12.9898 + bData.cx * 78.233)) * PRECOMPILED_STYLES.length)) % PRECOMPILED_STYLES.length;
-            const chosen = PRECOMPILED_STYLES[styleIdx];
-            materials = [chosen.roofMat.clone(), chosen.sideMat.clone()];
+            const wallKey = FACADE_KEYS[idx % FACADE_KEYS.length];
+            const wallM = facadeMaterials[wallKey] || facadeMaterials.oldWarmTile;
+            const roofM = roofMaterials.concrete;
+            materials = [wallM, wallM, roofM, roofM, wallM, wallM];
         }
 
-        const mesh = new THREE.Mesh(geom, materials);
-        // 重要：Y 軸抬升大樓高度，讓頂部與停機坪齊平
-        mesh.position.y = bData.bh;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(ww, wh, wd), materials);
+        mesh.position.set(wx, wh / 2, wz);
+        mesh.rotation.y = b.rotRad || 0;
         cityGroup.add(mesh);
 
-        const edges = new THREE.LineSegments(
-            new THREE.EdgesGeometry(geom),
-            new THREE.LineBasicMaterial({ color: new THREE.Color(edgeColor), transparent: true, opacity: edgeOpacity })
-        );
-        mesh.add(edges);
+        // 屋頂鐵皮加蓋與水塔 (一般大樓保留特色)
+        if (!isStart && !isGoal && wh >= 7.0 && wh <= 18.0 && (idx % 3 === 0)) {
+            const tinM = roofMaterials[ROOF_TIN_KEYS[idx % ROOF_TIN_KEYS.length]];
+            const addonMesh = new THREE.Mesh(new THREE.BoxGeometry(ww * 0.75, 1.2, wd * 0.75), tinM);
+            addonMesh.position.set(wx, wh + 0.6, wz);
+            addonMesh.rotation.y = b.rotRad || 0;
+            cityGroup.add(addonMesh);
 
+            const tankM = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8 });
+            const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 8), tankM);
+            tank.position.set(wx + (ww * 0.2), wh + 0.4, wz);
+            cityGroup.add(tank);
+        }
+
+        // 登錄物理碰撞清單 (AABB 包圍盒)
+        const halfSpan = Math.max(ww, wd) * 0.65;
         buildings.push({
-            xmin: bData.bMinX, xmax: bData.bMaxX,
-            zmin: bData.bMinZ, zmax: bData.bMaxZ,
-            height: bData.bh, mesh: mesh,
-            cx: bData.cx, cz: bData.cz,
-            width: bData.width, depth: bData.depth,
-            isStart, isGoal
+            xmin: wx - halfSpan,
+            xmax: wx + halfSpan,
+            zmin: wz - halfSpan,
+            zmax: wz + halfSpan,
+            height: wh,
+            mesh: mesh,
+            cx: wx,
+            cz: wz,
+            isStart: isStart,
+            isGoal: isGoal
         });
     });
 
     const startB = buildings[startIdx];
     const goalB = buildings[goalIdx];
 
-    // 起點停機坪置於綠色大樓頂部
     START_POS = [startB.cx, startB.height + droneRadius + 0.05, startB.cz];
     createHelipad(startB.cx, startB.height, startB.cz, 0x10b981);
 
-    // 終點停機坪置於金色大樓頂部（必定大於 5m 高度，不再被地圖吞掉）
     GOAL_POS = [goalB.cx, goalB.height + droneRadius + 0.05, goalB.cz];
     createHelipad(goalB.cx, goalB.height, goalB.cz, 0xf59e0b);
 
     BASE_TOTAL_DIST = Math.hypot(GOAL_POS[0] - START_POS[0], GOAL_POS[1] - START_POS[1], GOAL_POS[2] - START_POS[2]);
+
+    console.log(`[種子 ${seedValue}] 台北士林特色街廓部署完畢：共 ${buildings.length} 棟建物`);
     return { mapWidth: MAP_WIDTH, mapDepth: MAP_DEPTH };
 }
