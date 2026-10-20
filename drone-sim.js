@@ -1,8 +1,8 @@
 // =========================================================================
-// drone-sim.js - 碰撞檢測、光達感測器、飛行模擬迴圈與評測系統
+// drone-sim.js - 物理避障、光達射線、連續碰撞 (CCD) 與黑盒子日誌
 // =========================================================================
 
-const DRONE_RADIUS = 0.12; // 縮小穿越機尺寸
+const DRONE_RADIUS = 0.12;
 let activeVelocity = [1.0, 0.0, 1.0];
 let simInterval = null;
 
@@ -10,8 +10,7 @@ let flightLogs = [];
 let flightEvents = [];
 let flightSummary = null;
 
-// 1. 物理碰撞與連續細分 (CCD)
-function checkSphereCollision(pos) {
+function checkSphereCollision(pos, isCrashCheck = false) {
     const [x, y, z] = pos;
     const r = DRONE_RADIUS;
 
@@ -33,34 +32,32 @@ function checkSphereCollision(pos) {
             const isAtGoalPad = Math.hypot(x - GOAL_POS[0], z - GOAL_POS[2]) < 0.9 && Math.abs(y - GOAL_POS[1]) < 0.3;
             if (isAtStartPad || isAtGoalPad) continue;
 
-            if (b.mesh && !b.isStart && !b.isGoal) {
-                if (Array.isArray(b.mesh.material)) {
-                    b.mesh.material[0].color.setHex(0xff0044);
-                    b.mesh.material[1].color.setHex(0xff0044);
-                }
+            if (isCrashCheck && b.mesh && !b.isStart && !b.isGoal) {
+                const redMat = new THREE.MeshLambertMaterial({ color: 0xef4444 });
+                b.mesh.material = [redMat, redMat, redMat, redMat, redMat, redMat];
             }
+
             return { hit: true, reason: "撞擊台北市建物外牆", building: b, contactPoint: [cx, cy, cz] };
         }
     }
     return { hit: false };
 }
 
-function checkContinuousPath(p1, p2, step = 0.02) {
+function checkContinuousPath(p1, p2, isCrashCheck = false, step = 0.02) {
     const dx = p2[0] - p1[0], dy = p2[1] - p1[1], dz = p2[2] - p1[2];
     const dist = Math.hypot(dx, dy, dz);
-    if (dist === 0) return checkSphereCollision(p1);
+    if (dist === 0) return checkSphereCollision(p1, isCrashCheck);
 
     const steps = Math.ceil(dist / step);
     for (let i = 1; i <= steps; i++) {
         const t = i / steps;
         const checkPos = [p1[0] + dx * t, p1[1] + dy * t, p1[2] + dz * t];
-        const res = checkSphereCollision(checkPos);
+        const res = checkSphereCollision(checkPos, isCrashCheck);
         if (res.hit) return { hit: true, pos: checkPos, reason: res.reason };
     }
     return { hit: false };
 }
 
-// 2. 虛擬光達
 function raycastSafe(origin, direction, maxDist = 15.0) {
     const dLen = Math.hypot(direction[0], direction[1], direction[2]);
     if (dLen === 0) return maxDist;
@@ -71,12 +68,13 @@ function raycastSafe(origin, direction, maxDist = 15.0) {
     while (d < maxDist) {
         d += step;
         const p = [origin[0] + nx * d, origin[1] + ny * d, origin[2] + nz * d];
-        if (checkSphereCollision(p).hit) return Math.max(0, d - DRONE_RADIUS);
+        if (checkSphereCollision(p, false).hit) {
+            return Math.max(0, d - DRONE_RADIUS);
+        }
     }
     return maxDist;
 }
 
-// 3. 評測計分板即時更新
 function updateScoreboard(pos, status) {
     const [x, y, z] = pos;
     const remain3D = Math.hypot(GOAL_POS[0] - x, GOAL_POS[1] - y, GOAL_POS[2] - z);
@@ -97,7 +95,6 @@ function updateScoreboard(pos, status) {
     return remain3D;
 }
 
-// 4. 結算日誌產出
 function finalizeFlight(finalPos, duration, statusText) {
     const remain3D = Math.hypot(GOAL_POS[0] - finalPos[0], GOAL_POS[1] - finalPos[1], GOAL_POS[2] - finalPos[2]);
     const progress = Math.max(0, Math.min(100, ((BASE_TOTAL_DIST - remain3D) / BASE_TOTAL_DIST) * 100));
